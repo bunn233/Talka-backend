@@ -9,7 +9,7 @@ import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
   const router = useRouter();
-  // 🟢 เปลี่ยนมารับ Email
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -32,7 +32,7 @@ export default function LoginPage() {
     if (hasError) return;
 
     try {
-      // 🟢 ส่ง email ไปให้ NextAuth
+
       const result = await signIn("credentials", {
         email, 
         password,

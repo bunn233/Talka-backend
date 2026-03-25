@@ -5,16 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3001",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@carousel-ui/react-spin-carousel-3d": "^1.0.18",
     "@prisma/adapter-mariadb": "^7.5.0",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.19.2",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/postcss": "^4.1.15",
+    "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -45,7 +47,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
     "postcss": "^8.5.6",
-    "prisma": "^5.22.0",
+    "prisma": "^6.19.2",
     "tailwindcss": "^4.1.16",
     "tailwindcss-animate": "^1.0.7"
   }

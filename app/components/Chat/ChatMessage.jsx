@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { Tooltip } from 'react-tooltip';
 import Picker from "emoji-picker-react";
 
-export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, aiPrompts = [], currentUser, onSendMessage, availableTags = [] }) { 
+export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, aiPrompts = [], currentUser, onSendMessage, availableTags = [] }) {
     if (!chat) {
         return (
             <div className="flex-1 flex justify-center items-center text-white/60 text-lg">
@@ -15,6 +15,8 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
     const textareaRef = useRef(null);
     const [height, setHeight] = useState(100);
 
+    const [messages, setMessages] = useState([]);
+
     const [showAiPrompts, setShowAiPrompts] = useState(false);
     const dropdownRef = useRef(null);
 
@@ -25,6 +27,43 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
     const fileInputRef = useRef(null);
     const [files, setFiles] = useState([]);
 
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+    // ✅ โหลด message จาก DB
+    const fetchMessages = async () => {
+        try {
+            const res = await fetch(`/api/messages?chat_session_id=${chat.id}`);
+            const data = await res.json();
+
+            const mapped = data.map((msg) => ({
+                text: msg.content,
+                from: msg.sender_type === "ADMIN" ? "me" : "user",
+                time: new Date(msg.created_at).toLocaleTimeString(),
+            }));
+
+            setMessages(mapped);
+
+        } catch (err) {
+            console.error("โหลดข้อความ error:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (!chat?.id) return;
+        fetchMessages();
+    }, [chat?.id]);
+
+    // ✅ auto refresh (polling)
+    useEffect(() => {
+        if (!chat?.id) return;
+
+        const interval = setInterval(() => {
+            fetchMessages();
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, [chat?.id]);
+
     const handleSelectPrompt = (promptObject) => {
         if (textareaRef.current) {
             textareaRef.current.focus();
@@ -32,19 +71,50 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
         setShowAiPrompts(false);
     };
 
-    // กดส่งข้อความ
-    const handleSendClick = () => {
+    // ✅ ส่งข้อความ → API + Prisma
+    const handleSendClick = async () => {
         const text = textareaRef.current.value;
+
         if (text.trim() !== "") {
-            onSendMessage(chat.id, text); 
-            
-            textareaRef.current.value = ""; 
+            try {
+                await fetch("/api/messages", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        chat_session_id: chat.id,
+                        sender_type: "ADMIN",
+                        sender_id: currentUser?.id,
+                        message_type: "TEXT",
+                        content: text,
+                    }),
+                });
+
+                // optional: push ไป LINE
+                await fetch("/api/line/push", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        chat_session_id: chat.id,
+                        message: text,
+                    }),
+                });
+
+                fetchMessages();
+
+            } catch (err) {
+                console.error("send message error:", err);
+            }
+
+            textareaRef.current.value = "";
             textareaRef.current.focus();
             setHeight(100);
         }
     };
 
-    // กด Enter เพื่อส่ง
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -106,7 +176,6 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
         setFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const onEmojiClick = (emojiData) => {
         const editor = textareaRef.current;
         if (!editor) return;
@@ -120,16 +189,16 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
 
     return (
         <div className="flex-1 min-w-0 h-[85vh] bg-[rgba(32,41,59,0.37)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl p-5 mt-3 ml-3 flex flex-col">
-            
+
             {/* --- Header --- */}
             <div className="flex flex-wrap md:flex-nowrap items-center justify-between border-b border-white/20 pb-3 mb-3 gap-3 relative">
                 {/* (ส่วน Header เหมือนเดิม) */}
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative w-12 h-12 shrink-0">
                         {chat.imgUrl ? (
-                            <img 
-                                src={chat.imgUrl} 
-                                alt={chat.name} 
+                            <img
+                                src={chat.imgUrl}
+                                alt={chat.name}
                                 className="w-full h-full rounded-full object-cover shadow-sm bg-gray-700"
                             />
                         ) : (
@@ -137,7 +206,7 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                                 {chat.avatar}
                             </div>
                         )}
-                        
+
                         {chat.channel && (
                             <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] shadow-sm ${chat.channel === 'Facebook' ? 'bg-[#1877F2]' : chat.channel === 'Line' ? 'bg-[#06C755]' : 'bg-gray-500'}`}>
                                 {chat.channel === 'Facebook' && <i className="fa-brands fa-facebook-f"></i>}
@@ -156,9 +225,9 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                             {(() => {
                                 let tagsArray = [];
                                 if (Array.isArray(chat.tags)) {
-                                    tagsArray = chat.tags; 
+                                    tagsArray = chat.tags;
                                 } else if (chat.tags) {
-                                    tagsArray = [chat.tags]; 
+                                    tagsArray = [chat.tags];
                                 }
 
                                 return tagsArray.map((tagName, idx) => {
@@ -167,7 +236,7 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                                     const emoji = tagInfo ? tagInfo.emoji : '';
 
                                     return (
-                                        <span 
+                                        <span
                                             key={idx}
                                             className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 text-white shadow-sm border border-white/10 flex items-center gap-1"
                                             style={{ backgroundColor: color }}
@@ -186,7 +255,7 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 ml-auto md:ml-0 relative" ref={aiModelDropdownRef}>
-                    <button 
+                    <button
                         onClick={() => setShowAiModelSelect(!showAiModelSelect)}
                         className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all shadow-lg border border-white/10 whitespace-nowrap ${chat.isAiMode ? 'bg-linear-to-r from-emerald-500 to-green-600 text-white shadow-green-500/30' : 'bg-[rgba(32,41,59,0.25)] border-[rgba(254,253,253,0.5)] hover:bg-white/10 hover:scale-105 text-white/80'}`}
                     >
@@ -230,8 +299,8 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
 
             {/* Chat Content */}
             <div className="flex-1 overflow-auto space-y-4 text-white/90 custom-scrollbar pr-2 py-4 flex flex-col">
-                {chat.messages && chat.messages.length > 0 ? (
-                    chat.messages.map((msg, index) => {
+                {messages.length > 0 ? (
+                    messages.map((msg, index) => {
                         const isMe = msg.from === 'me';
                         return (
                             <div key={index} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
@@ -248,31 +317,16 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                 ) : (
                     <div className="self-center text-white/30 text-sm italic mt-10">Start a new conversation</div>
                 )}
-
-                {chat.isAiMode && chat.activeAiAgent && (
-                    <div className="flex justify-center my-4 animate-fade-in">
-                        <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-4 py-1 rounded-full text-xs flex items-center gap-2 shadow-lg backdrop-blur-md">
-                            <span className="text-sm">{chat.activeAiAgent.emoji}</span>
-                            <span className="font-semibold">{chat.activeAiAgent.name}</span>
-                            <span>is replying...</span>
-                            <span className="flex gap-1 ml-1">
-                                <span className="w-1 h-1 bg-green-400 rounded-full animate-bounce"></span>
-                                <span className="w-1 h-1 bg-green-400 rounded-full animate-bounce delay-75"></span>
-                                <span className="w-1 h-1 bg-green-400 rounded-full animate-bounce delay-150"></span>
-                            </span>
-                        </span>
-                    </div>
-                )}
             </div>
 
-            {/* Input Area */}
+            {/* Input Area (เหมือนเดิม) */}
             <div className="mt-4 bg-[rgba(32,41,59,0.25)] relative group p-4 rounded-2xl shadow-2xs">
                 <div className="input-field max-h-[300px]">
                     <textarea
                         ref={textareaRef}
                         onKeyDown={handleKeyDown}
                         style={{ height }}
-                        disabled={chat.isAiMode} 
+                        disabled={chat.isAiMode}
                         className="w-full border rounded p-2 resize-none max-h-[300px] bg-transparent text-white border-none outline-none disabled:cursor-not-allowed"
                         placeholder={chat.isAiMode ? "AI is replying automatically..." : "Type a message..."}
                     />
@@ -281,11 +335,11 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
 
                 <div className="function-field flex justify-between mt-2 border-t border-white/10 pt-2">
                     <div className="left-funtion flex gap-1">
-                        <div className="relative" ref={dropdownRef}> 
-                            <button 
+                        <div className="relative" ref={dropdownRef}>
+                            <button
                                 onClick={() => setShowAiPrompts(!showAiPrompts)}
-                                data-tooltip-id="attach-tooltip" 
-                                data-tooltip-content="AI Prompt" 
+                                data-tooltip-id="attach-tooltip"
+                                data-tooltip-content="AI Prompt"
                                 className={`text-[18px] p-2 transition rounded-lg hover:bg-white/10 ${showAiPrompts ? 'text-purple-400 bg-white/10' : 'text-white/70 hover:text-white'}`}
                             >
                                 <i className="fa-solid fa-wand-magic-sparkles"></i>
@@ -322,13 +376,13 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                     </div>
                     <div className="right-function">
                         <button
-                                onClick={handleSendClick} 
-                                data-tooltip-id="attach-tooltip"
-                                data-tooltip-content="ส่งข้อความ"
-                                className="text-white text-[20px] px-3 py-2 transition hover:text-blue-400"
-                            >
-                                <i className="fa-solid fa-paper-plane"></i>
-                            </button>
+                            onClick={handleSendClick}
+                            data-tooltip-id="attach-tooltip"
+                            data-tooltip-content="ส่งข้อความ"
+                            className="text-white text-[20px] px-3 py-2 transition hover:text-blue-400"
+                        >
+                            <i className="fa-solid fa-paper-plane"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -343,7 +397,7 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
                     </div>
                 )}
             </div>
-            
+
             <Tooltip id="attach-tooltip" place="top" className="z-50" />
         </div>
     );
