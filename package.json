@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@carousel-ui/react-spin-carousel-3d": "^1.0.18",
+    "@line/bot-sdk": "^10.6.0",
     "@prisma/adapter-mariadb": "^7.5.0",
     "@prisma/client": "^6.19.2",
     "@radix-ui/react-tooltip": "^1.2.8",

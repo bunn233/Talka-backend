@@ -4,6 +4,7 @@ import GoogleImport from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
+const prisma = new PrismaClient();
 const CredentialsProvider = CredentialsImport.default || CredentialsImport;
 const GoogleProvider = GoogleImport.default || GoogleImport;
 

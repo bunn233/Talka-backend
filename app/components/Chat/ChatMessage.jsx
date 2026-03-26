@@ -14,7 +14,8 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
 
     const textareaRef = useRef(null);
     const [height, setHeight] = useState(100);
-    const [messages, setMessages] = useState([]);
+    const [messages, setMessages] = useState(chat?.messages || []);
+    const messagesEndRef = useRef(null);
 
     const [showAiPrompts, setShowAiPrompts] = useState(false);
     const dropdownRef = useRef(null);
@@ -27,101 +28,33 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
 
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-    // =========================
-    // 🔥 โหลด message ครั้งแรก
-    // =========================
-    const fetchMessages = async () => {
-        try {
-            const res = await fetch(`/api/messages?chat_session_id=${chat.id}`);
-            const data = await res.json();
-
-            const mapped = data.map((msg) => ({
-                text: msg.content,
-                from: msg.sender_type === "ADMIN" ? "me" : "user",
-                time: new Date(msg.created_at).toLocaleTimeString(),
-            }));
-
-            setMessages(mapped);
-
-        } catch (err) {
-            console.error("โหลดข้อความ error:", err);
+    // ✅ ใช้ chat.messages จาก props แทนการ fetch
+    useEffect(() => {
+        if (chat?.messages) {
+            setMessages(chat.messages);
         }
-    };
+    }, [chat?.messages, chat?.id]);
 
+    // 🟢 Scroll to bottom
     useEffect(() => {
-        if (!chat?.id) return;
-        fetchMessages();
-    }, [chat?.id]);
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
 
     // =========================
-    // 🔥 SSE REALTIME
-    // =========================
-    useEffect(() => {
-        if (!chat?.id) return;
-
-        const eventSource = new EventSource("/api/line/webhook?stream=true");
-
-        eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                if (data.chatId !== chat.id) return;
-
-                setMessages((prev) => [
-                    ...prev,
-                    {
-                        text: data.text,
-                        from: data.from === "me" ? "me" : "user",
-                        time: new Date().toLocaleTimeString(),
-                    },
-                ]);
-            } catch (err) {
-                console.error("SSE error:", err);
-            }
-        };
-
-        return () => {
-            eventSource.close();
-        };
-    }, [chat?.id]);
-
-    // =========================
-    // 🔥 SEND MESSAGE (แก้แล้ว)
+    // 🔥 SEND MESSAGE
     // =========================
     const handleSendClick = async () => {
-        const text = textareaRef.current.value;
+        const text = textareaRef.current?.value;
 
-        if (text.trim() !== "") {
+        if (!text?.trim()) return;
 
-            // ✅ แสดงทันที (optimistic UI)
-            setMessages((prev) => [
-                ...prev,
-                {
-                    text: text,
-                    from: "me",
-                    time: new Date().toLocaleTimeString(),
-                },
-            ]);
+        // ✅ Clear input immediately
+        textareaRef.current.value = "";
+        setHeight(100);
 
-            try {
-                await fetch("/api/messages/send", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        chat_session_id: chat.id,
-                        text: text,
-                    }),
-                });
-
-            } catch (err) {
-                console.error("send message error:", err);
-            }
-
-            textareaRef.current.value = "";
-            textareaRef.current.focus();
-            setHeight(100);
+        // ✅ Call parent handler
+        if (onSendMessage) {
+            await onSendMessage(chat.id, text);
         }
     };
 
@@ -198,58 +131,74 @@ export default function ChatMessage({ chat, availableAgents, onSelectAiAgent, ai
     };
 
     return (
-        <div className="flex-1 min-w-0 h-[85vh] bg-[rgba(32,41,59,0.37)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl p-5 mt-3 ml-3 flex flex-col">
+        <div className="flex-1 min-w-0 h-full bg-linear-to-br from-gray-800/40 to-gray-900/40 border border-gray-700/50 backdrop-blur-sm rounded-2xl shadow-lg p-5 flex flex-col overflow-hidden">
 
             {/* --- Header --- */}
-            <div className="flex flex-wrap md:flex-nowrap items-center justify-between border-b border-white/20 pb-3 mb-3 gap-3 relative">
+            <div className="shrink-0 flex items-center justify-between border-b border-gray-700/50 pb-4 mb-4 gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative w-12 h-12 shrink-0">
-                        {chat.imgUrl ? (
-                            <img src={chat.imgUrl} alt={chat.name} className="w-full h-full rounded-full object-cover shadow-sm bg-gray-700" />
+                        {chat?.imgUrl ? (
+                            <img src={chat.imgUrl} alt={chat?.name} className="w-full h-full rounded-full object-cover shadow-sm bg-gray-700" />
                         ) : (
-                            <div className="w-full h-full bg-linear-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-2xl shadow-lg">
-                                {chat.avatar}
+                            <div className="w-full h-full bg-linear-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-2xl shadow-lg font-bold text-white">
+                                {chat?.avatar || "?"}
                             </div>
                         )}
                     </div>
 
-                    <div className="min-w-0">
-                        <h2 className="text-white font-semibold text-lg truncate">{chat.name}</h2>
-                        <span className="text-white/60 text-xs">Open : {chat.openTime || chat.time}</span>
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-white font-semibold text-lg truncate">{chat?.name}</h2>
+                        <span className="text-gray-400 text-xs">Status: {chat?.status}</span>
                     </div>
                 </div>
             </div>
 
-            {/* Chat Content */}
-            <div className="flex-1 overflow-auto space-y-4 text-white/90 pr-2 py-4 flex flex-col">
-                {messages.map((msg, index) => {
-                    const isMe = msg.from === 'me';
-                    return (
-                        <div key={index} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                            <div className={`text-xs ${isMe ? 'text-right' : 'text-left'}`}>
-                                {msg.time}
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto space-y-4 text-white/90 pr-2 mb-4 flex flex-col">
+                {messages && messages.length > 0 ? (
+                    messages.map((msg, index) => {
+                        const isMe = msg.from === 'me' || msg.from === 'AGENT';
+                        return (
+                            <div key={index} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                <span className={`text-xs mb-1 ${isMe ? 'text-right text-gray-500' : 'text-left text-gray-500'}`}>
+                                    {msg.time}
+                                </span>
+                                <div className={`px-4 py-3 rounded-2xl max-w-[70%] text-sm wrap-break-words ${
+                                    isMe 
+                                        ? 'bg-blue-600 text-white rounded-br-none' 
+                                        : 'bg-gray-700/60 text-white rounded-bl-none'
+                                }`}>
+                                    {msg.text}
+                                </div>
                             </div>
-                            <div className={`px-4 py-3 rounded-2xl max-w-[80%] text-sm ${isMe ? 'bg-blue-600 text-white' : 'bg-white/10 text-white'}`}>
-                                {msg.text}
-                            </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })
+                ) : (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                        No messages yet
+                    </div>
+                )}
+                <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div className="mt-4">
+            {/* Input Area */}
+            <div className="shrink-0 border-t border-gray-700/50 pt-4">
                 <textarea
                     ref={textareaRef}
                     onKeyDown={handleKeyDown}
-                    style={{ height }}
-                    className="w-full p-2 bg-transparent text-white"
+                    style={{ height: `${Math.min(height, 150)}px` }}
+                    className="w-full p-3 bg-gray-800/50 text-white placeholder-gray-500 rounded-lg border border-gray-700/50 focus:border-blue-500 focus:outline-none resize-none"
                     placeholder="Type a message..."
                 />
 
-                <button onClick={handleSendClick} className="text-white mt-2">
-                    Send
-                </button>
+                <div className="flex gap-2 mt-3">
+                    <button 
+                        onClick={handleSendClick}
+                        className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                    >
+                        Send
+                    </button>
+                </div>
             </div>
 
             <Tooltip id="attach-tooltip" />
