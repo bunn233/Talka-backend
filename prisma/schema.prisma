@@ -191,14 +191,23 @@ model ActivityLog {
   user_id Int?
   chat_session_id Int?
 
-  action    String
-  old_value String?
-  new_value String?
+  type String @default("system") // message | system | event
+
+  action String
+
+  message String?
+
+  old_value Json?
+  new_value Json?
+  metadata  Json?
 
   created_at DateTime @default(now())
 
   user User? @relation(fields: [user_id], references: [user_id])
   chat ChatSession? @relation(fields: [chat_session_id], references: [chat_session_id])
+
+  @@index([chat_session_id, type, created_at])
+  @@index([user_id])
 }
 
 enum Role {
