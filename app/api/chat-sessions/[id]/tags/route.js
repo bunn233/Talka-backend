@@ -1,53 +1,64 @@
-// app/api/chat-sessions/[id]/tags/route.js
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma"; 
+import { pusherServer } from "@/lib/pusher";
 
-const prisma = new PrismaClient();
-
-export async function POST(request, { params }) {
+export async function POST(req, context) {
     try {
-        // 🟢 เพิ่ม await เพื่อแกะ params ออกมาก่อน
-        const resolvedParams = await params; 
-        const chatId = parseInt(resolvedParams.id); 
-        
-        const { tagName } = await request.json();
+        const params = await context.params;
+        const chatId = parseInt(params.id); 
+        const { tagId } = await req.json();
 
-        // 1. หา Tag_id จากฐานข้อมูล (ใช้ contains เพราะใน DB อาจมี Emoji รวมอยู่ในชื่อ)
-        const tag = await prisma.tag.findFirst({
-            where: { tag_name: { contains: tagName } }
-        });
-
-        if (!tag) {
-            return NextResponse.json({ error: "Tag not found" }, { status: 404 });
+        if (!tagId || !chatId) {
+            return NextResponse.json({ error: "ข้อมูลไม่ครบถ้วน" }, { status: 400 });
         }
 
-        // 2. เช็คว่าแชทนี้มี Tag นี้เชื่อมอยู่แล้วหรือยังในตาราง ChatTag
+        const chatSession = await prisma.chatSession.findUnique({
+            where: { chat_session_id: chatId },
+            select: { channel: { select: { workspace_id: true } } }
+        });
+
         const existingChatTag = await prisma.chatTag.findFirst({
             where: {
                 chat_session_id: chatId,
-                tag_id: tag.tag_id
+                tag_id: parseInt(tagId)
             }
         });
 
+        let actionType = "added";
+
         if (existingChatTag) {
-            // ถ้ามีแล้ว -> ให้ลบออก (Toggle Off)
-            await prisma.chatTag.delete({
-                where: { chat_tag_id: existingChatTag.chat_tag_id }
+            await prisma.chatTag.deleteMany({
+                where: { 
+                    chat_session_id: chatId,
+                    tag_id: parseInt(tagId)
+                }
             });
-            return NextResponse.json({ action: "removed", tagName });
+            actionType = "removed";
         } else {
-            // ถ้ายังไม่มี -> ให้เพิ่มเข้าไป (Toggle On)
             await prisma.chatTag.create({
                 data: {
                     chat_session_id: chatId,
-                    tag_id: tag.tag_id
+                    tag_id: parseInt(tagId)
                 }
             });
-            return NextResponse.json({ action: "added", tagName });
         }
 
+        // 3. ตะโกนบอก Pusher
+        if (chatSession?.channel?.workspace_id) {
+            try {
+                await pusherServer.trigger(`workspace-${chatSession.channel.workspace_id}`, 'chat-details-updated', {
+                    chatId: chatId,
+                    message: `Tag ถูก ${actionType}`
+                });
+            } catch (e) {
+                console.error("Pusher Error:", e);
+            }
+        }
+
+        return NextResponse.json({ action: actionType, tagId });
+
     } catch (error) {
-        console.error("Error toggling tag:", error);
+        console.error("❌ Tag API Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

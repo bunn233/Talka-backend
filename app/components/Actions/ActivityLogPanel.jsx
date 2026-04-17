@@ -1,10 +1,33 @@
 "use client";
-import React from "react";
-import { X, ArrowRight, Activity, Tag, MessageSquare, StickyNote, RefreshCw, ShieldCheck } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, ArrowRight, Activity, Tag, MessageSquare, StickyNote, RefreshCw, ShieldCheck, Trash2, Columns } from "lucide-react";
 
-export default function ActivityLogPanel({ onClose, logs = [] }) {
+export default function ActivityLogPanel({ onClose, chatId }) {
+    const [logs, setLogs] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchLogs = async () => {
+            if (!chatId) {
+                setIsLoading(false);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/activity-logs?chatId=${chatId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setLogs(data.logs || []);
+                }
+            } catch (error) {
+                console.error("Failed to fetch logs:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchLogs();
+    }, [chatId]);
     
-    // ฟังก์ชันจัดรูปแบบเวลา
     const formatTime = (isoString) => {
         if (!isoString) return "";
         try {
@@ -25,18 +48,21 @@ export default function ActivityLogPanel({ onClose, logs = [] }) {
         return name.substring(0, 2).toUpperCase();
     };
 
-    // ฟังก์ชันกำหนด Icon และสี
-    const getActionDetails = (actionName) => {
-        const act = (actionName || "").toUpperCase();
-        if (act.includes("TAG")) return { icon: <Tag size={12} />, color: "text-amber-400", bg: "bg-amber-400/10" };
-        if (act.includes("STATUS")) return { icon: <RefreshCw size={12} />, color: "text-blue-400", bg: "bg-blue-400/10" };
-        if (act.includes("NOTE")) return { icon: <StickyNote size={12} />, color: "text-[#BE7EC7]", bg: "bg-[#BE7EC7]/10" };
-        if (act.includes("MESSAGE")) return { icon: <MessageSquare size={12} />, color: "text-emerald-400", bg: "bg-emerald-400/10" };
-        return { icon: <Activity size={12} />, color: "text-white/50", bg: "bg-white/5" };
-    };
+const getActionDetails = (actionName) => {
+     const act = (actionName || "").toUpperCase();
+     if (act.includes("TRASH") || act.includes("DELETE")) return { icon: <Trash2 size={12} />, color: "text-red-400", bg: "bg-red-400/10" };
+     if (act.includes("RESTORE")) return { icon: <RefreshCw size={12} />, color: "text-green-400", bg: "bg-green-400/10" };
+     if (act.includes("EDIT")) return { icon: <StickyNote size={12} />, color: "text-blue-400", bg: "bg-blue-400/10" };
+     if (act.includes("TAG")) return { icon: <Tag size={12} />, color: "text-amber-400", bg: "bg-amber-400/10" };
+     if (act.includes("BOARD")) return { icon: <Columns size={12} />, color: "text-purple-400", bg: "bg-purple-400/10" }; 
+     if (act.includes("STATUS")) return { icon: <RefreshCw size={12} />, color: "text-blue-400", bg: "bg-blue-400/10" };
+     if (act.includes("NOTE")) return { icon: <StickyNote size={12} />, color: "text-[#BE7EC7]", bg: "bg-[#BE7EC7]/10" };
+     if (act.includes("MESSAGE")) return { icon: <MessageSquare size={12} />, color: "text-emerald-400", bg: "bg-emerald-400/10" };
+     return { icon: <Activity size={12} />, color: "text-white/50", bg: "bg-white/5" };
+ };
 
     return (
-        <div className="w-[340px] max-h-[85vh] bg-[#1a1423] border border-[#BE7EC7]/15 rounded-[24px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] flex flex-col self-start overflow-hidden shrink-0 z-50 relative">
+        <div className="w-[320px] h-full max-h-full bg-[#1a1423] border border-[#BE7EC7]/15 rounded-[24px] shadow-[0_15px_40px_rgba(0,0,0,0.5)] flex flex-col shrink-0 overflow-hidden relative">
             
             {/* Top Accent Line */}
             <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-[#BE7EC7]/50 to-transparent"></div>
@@ -56,8 +82,13 @@ export default function ActivityLogPanel({ onClose, logs = [] }) {
             </div>
 
             {/* Timeline Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-5 relative">
-                {!logs || logs.length === 0 ? (
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-5 relative min-h-0">
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center h-full opacity-40">
+                        <RefreshCw size={24} className="animate-spin mb-2" />
+                        <p className="text-xs">Loading Logs...</p>
+                    </div>
+                ) : !logs || logs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full py-10 opacity-40">
                         <Activity size={32} className="mb-3" />
                         <p className="text-sm font-medium">No activity recorded</p>
@@ -68,7 +99,6 @@ export default function ActivityLogPanel({ onClose, logs = [] }) {
                         <div className="absolute left-[15px] top-2 bottom-0 w-[2px] bg-gradient-to-b from-white/10 via-white/5 to-transparent"></div>
                         
                         {[...logs].reverse().map((log, idx) => {
-                            // รองรับทั้ง field 'action' (Database) และ 'type' (Mock Data)
                             const currentAction = log.action || log.type || "ACTION";
                             const user = log.user;
                             const username = user?.username || log.by || "System";

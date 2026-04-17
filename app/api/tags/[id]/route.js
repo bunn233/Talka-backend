@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { pusherServer } from "@/lib/pusher";
 
 const prisma = new PrismaClient();
 
@@ -16,6 +17,11 @@ export async function PATCH(request, { params }) {
             where: { tag_id: id },
             data: { color: color },
         });
+
+        // 🔥 2. ตะโกนบอกแชทว่า "สี Tag เปลี่ยน!"
+        try {
+            await pusherServer.trigger('global-tags', 'tag-updated', { message: "Tag updated" });
+        } catch (e) { console.error("Pusher error:", e); }
 
         return NextResponse.json({ success: true, tag: updatedTag });
     } catch (error) {
@@ -43,6 +49,10 @@ export async function DELETE(request, { params }) {
         await prisma.tag.delete({
             where: { tag_id: id },
         });
+
+        try {
+            await pusherServer.trigger('global-tags', 'tag-updated', { message: "Tag deleted" });
+        } catch (e) { console.error("Pusher error:", e); }
 
         return NextResponse.json({ success: true, message: "Tag deleted successfully" });
     } catch (error) {

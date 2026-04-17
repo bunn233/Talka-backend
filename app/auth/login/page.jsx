@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, Eye, EyeOff, Mail, X, CheckCircle, AlertCircle } from "lucide-react";
+import { Lock, Eye, EyeOff, Mail, X, CheckCircle, AlertCircle, KeyRound } from "lucide-react"; // 🔥 เพิ่ม KeyRound
 import { motion, AnimatePresence } from "framer-motion";
 import { signIn } from "next-auth/react";
 
@@ -22,6 +22,11 @@ export default function LoginPage() {
     success: false,
   });
 
+  // 🔥 State สำหรับระบบลืมรหัสผ่าน
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [isSendingReset, setIsSendingReset] = useState(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     let hasError = false;
@@ -32,7 +37,6 @@ export default function LoginPage() {
     if (hasError) return;
 
     try {
-
       const result = await signIn("credentials", {
         email, 
         password,
@@ -53,6 +57,41 @@ export default function LoginPage() {
       console.error("Login error:", error);
       setPopup({ show: true, message: "เกิดข้อผิดพลาดที่ระบบ", success: false });
       setTimeout(() => setPopup((p) => ({ ...p, show: false })), 2000);
+    }
+  };
+
+  // 🔥 ฟังก์ชันจัดการตอนกดส่งอีเมลลืมรหัสผ่าน
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setPopup({ show: true, message: "โปรดกรอกอีเมลของคุณ", success: false });
+      setTimeout(() => setPopup((p) => ({ ...p, show: false })), 2000);
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      // ⚠️ ต้องไปสร้าง API เส้นนี้ไว้ที่หลังบ้านด้วยนะครับ
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+
+      if (res.ok) {
+        setShowForgotModal(false);
+        setPopup({ show: true, message: "ส่งลิงก์เปลี่ยนรหัสผ่านไปยังอีเมลแล้ว!", success: true });
+        setForgotEmail(""); // เคลียร์ช่องกรอก
+      } else {
+        const data = await res.json();
+        setPopup({ show: true, message: data.error || "ไม่พบอีเมลนี้ในระบบ", success: false });
+      }
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      setPopup({ show: true, message: "เกิดข้อผิดพลาดในการส่งอีเมล", success: false });
+    } finally {
+      setIsSendingReset(false);
+      setTimeout(() => setPopup((p) => ({ ...p, show: false })), 3000);
     }
   };
 
@@ -99,6 +138,17 @@ export default function LoginPage() {
                   </button>
                 </div>
                 {errorPass && <p className="absolute text-red-500 text-xs left-3 top-full mt-1">โปรดกรอกรหัสผ่าน</p>}
+                
+                {/* 🔥 ปุ่มลืมรหัสผ่าน */}
+                <div className="flex justify-end mt-2 pr-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowForgotModal(true)} 
+                    className="text-xs font-medium text-purple-600 hover:text-purple-800 transition-colors underline-offset-2 hover:underline"
+                  >
+                    ลืมรหัสผ่านใช่หรือไม่?
+                  </button>
+                </div>
               </div>
 
               <div className="pt-2 space-y-3">
@@ -122,8 +172,9 @@ export default function LoginPage() {
       </div>
 
       <AnimatePresence>
+        {/* Popup แจ้งเตือนสถานะต่างๆ (ของเดิม) */}
         {popup.show && (
-          <motion.div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[60]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div className={`relative w-[400px] min-h-[280px] bg-white/90 backdrop-blur-xl border border-white/60 shadow-2xl rounded-3xl p-8 flex flex-col justify-center items-center gap-6 text-center ${popup.success ? "shadow-purple-500/20" : "shadow-red-500/20"}`} initial={{ scale: 0.8, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, y: 20, opacity: 0 }}>
               <button className="absolute top-4 right-4 text-gray-400 hover:text-gray-600" onClick={closePopup}><X size={20} /></button>
               <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg mb-2 ${popup.success ? "bg-green-100 text-green-600" : "bg-red-100 text-red-500"}`}>
@@ -133,6 +184,57 @@ export default function LoginPage() {
                 <h2 className="text-2xl font-bold text-gray-800">{popup.success ? "Success!" : "Failed"}</h2>
                 <p className="text-gray-500 font-medium">{popup.message}</p>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* 🔥 Modal สำหรับกรอกอีเมลลืมรหัสผ่าน */}
+        {showForgotModal && (
+          <motion.div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="relative w-[420px] bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl rounded-3xl p-8 flex flex-col gap-4 text-center" initial={{ scale: 0.8, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, y: 20, opacity: 0 }}>
+              
+              <div className="w-16 h-16 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mx-auto shadow-lg mb-1">
+                <KeyRound size={32} strokeWidth={2.5} />
+              </div>
+              
+              <h2 className="text-2xl font-bold text-gray-800">ลืมรหัสผ่าน?</h2>
+              <p className="text-gray-500 text-sm font-medium mb-3">
+                กรุณากรอกอีเมลที่ใช้ลงทะเบียน<br/>ระบบจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้ครับ
+              </p>
+              
+              <form onSubmit={handleForgotPassword} className="space-y-5">
+                <div className="flex items-center border border-gray-300 rounded-full px-3 py-2.5 focus-within:ring-1 focus-within:ring-purple-400 bg-white">
+                  <Mail className="text-purple-600 mr-2" size={18} />
+                  <input 
+                    type="email" 
+                    value={forgotEmail} 
+                    onChange={(e) => setForgotEmail(e.target.value)} 
+                    placeholder="Email address" 
+                    className="w-full outline-none text-black placeholder-gray-400 bg-transparent text-sm" 
+                    required 
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => { setShowForgotModal(false); setForgotEmail(""); }} 
+                    disabled={isSendingReset} 
+                    className="flex-1 py-2.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition font-medium text-sm"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isSendingReset} 
+                    style={{ background: "#5d3d99", backgroundImage: "linear-gradient(140deg, rgba(93, 61, 153, 1) 0%, rgba(201, 117, 173, 1) 100%)" }} 
+                    className="flex-1 text-white py-2.5 rounded-full hover:opacity-90 transition shadow-md font-medium text-sm flex justify-center items-center gap-2"
+                  >
+                    {isSendingReset ? <span className="animate-spin">⏳</span> : "ส่งลิงก์"}
+                  </button>
+                </div>
+              </form>
+
             </motion.div>
           </motion.div>
         )}

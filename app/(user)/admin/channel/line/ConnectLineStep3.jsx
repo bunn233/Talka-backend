@@ -5,9 +5,9 @@ import { ArrowLeft, CheckCircle2, Zap, Shield, Globe, Copy, Check, ChevronRight 
 export default function ConnectLineStep3({ onBack, onComplete }) {
   const [checked, setChecked] = useState(false);
   const [copied, setCopied] = useState(false);
-  
-  // URL จำลองสำหรับ Webhook
-  const webhookUrl = "https://api.yourworkspace.com/webhook/line/v2/auth_8829102";
+
+const currentHost = typeof window !== "undefined" ? window.location.origin : "";
+const webhookUrl = `${currentHost}/api/webhook/line`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(webhookUrl);

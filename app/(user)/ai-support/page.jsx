@@ -1,73 +1,77 @@
 "use client";
 import { useState } from "react";
-import AiSupport from "./mainpage/page";
-import TemplatesPage from "./templates/templates";
-import Receptionist from "./templates/receptionist";
-import SaleAgent from "./templates/slaesagent";
-import SupportAgent from "./templates/supportagent";
-import CearteNew from "./templates/createnew";
-import UseTemplates from "./usetemplates/usetemplates";
+import MainPage from "@/app/components/Ai-Agent/MainPage.jsx";
+import TemplatesPage from "@/app/components/Ai-Agent/TemplatesPage.jsx";
+import AgentBuilder from "@/app/components/Ai-Agent/AgentBuilder.jsx";
 
-export default function page() {
-  const [view, setView] = useState("mainpage");
+const TEMPLATES = {
+  receptionist: {
+    name: "Receptionist",
+    emoji: "🛎️",
+    greeting: "สวัสดีค่ะ มีอะไรให้ช่วยไหมคะ?",
+    instructions: "Greets Contacts, identifies their needs, captures details, and routes them.",
+    tone: "professional"
+  },
+  sales: {
+    name: "Sales Agent",
+    emoji: "📈",
+    greeting: "สวัสดีครับ สนใจสินค้าตัวไหนสอบถามได้เลยครับ",
+    instructions: "Learns customer needs, suggests products, and connects to the right team.",
+    tone: "persuasive"
+  },
+  support: {
+    name: "Support Agent",
+    emoji: "🛠️",
+    greeting: "สวัสดีค่ะ พบปัญหาการใช้งานด้านไหนคะ?",
+    instructions: "Answers product questions using AI Knowledge Sources and escalates.",
+    tone: "friendly"
+  }
+};
 
-  const [selectedTemplates, setSelectedTemplates] = useState([]);
+export default function AiSupportFlow() {
+  const [currentStep, setCurrentStep] = useState("intro"); 
+  const [selectedAgent, setSelectedAgent] = useState(null); 
 
-  const handleUseTemplate = (type) => {
-    setSelectedTemplates(prev =>
-      prev.includes(type) ? prev : [...prev, type]
-    );
-    setView("usetemplates");
-  };
   return (
-    <>
-      {view === "mainpage" && <AiSupport onNext={() => setView("templates")} />}
-      {view === "templates" && (
-        <TemplatesPage
-          onBack={() => setView("mainpage")}
-          onreceptionist={() => setView("receptionist")}
-          onsalesagent={() => setView("saleagent")}
-          onsupportagent={() => setView("supportagent")}
-          oncreatenew={() => setView("createnew")}          
-        />      
+    // ลบ padding/margin ออกให้หมด เพื่อให้ Component ด้านในขยายเต็มกรอบพอดีกับ Sidebar
+    <div className="w-full h-full flex flex-col">
+      {currentStep === "intro" && (
+        <MainPage onStart={() => setCurrentStep("list")} />
       )}
-      {view === "receptionist" && (
-        <Receptionist
-          onNext={() => setView("receptionist")}
-          onBack={() => setView("templates")}
-          onUseRecep={() => handleUseTemplate("receptionist")}
+
+      {currentStep === "list" && (
+        <TemplatesPage 
+          onBack={() => setCurrentStep("intro")}
+          oncreatenew={() => {
+            setSelectedAgent(null); 
+            setCurrentStep("builder");
+          }}
+          onEditAgent={(agent) => {
+            setSelectedAgent(agent); 
+            setCurrentStep("builder");
+          }}
+          onreceptionist={() => {
+            setSelectedAgent(TEMPLATES.receptionist); 
+            setCurrentStep("builder");
+          }}
+          onsalesagent={() => {
+            setSelectedAgent(TEMPLATES.sales);
+            setCurrentStep("builder");
+          }}
+          onsupportagent={() => {
+            setSelectedAgent(TEMPLATES.support);
+            setCurrentStep("builder");
+          }}
         />
       )}
-      {view === "saleagent" && (
-        <SaleAgent
-          onNext={() => setView("saleagent")}
-          onBack={() => setView("templates")}
-          onUseSale={() => handleUseTemplate("saleagent")}
+
+      {currentStep === "builder" && (
+        <AgentBuilder 
+          initialData={selectedAgent}
+          onBack={() => setCurrentStep("list")}
+          onSaveSuccess={() => setCurrentStep("list")}
         />
       )}
-      {view === "supportagent" && (
-        <SupportAgent
-          onNext={() => setView("supportagent")}
-          onBack={() => setView("templates")}
-          onUseSup={() => handleUseTemplate("supportagent")}
-        />
-      )}
-      {view === "createnew" && (
-        <CearteNew
-          onNext={() => setView("createnew")}
-          onBack={() => setView("templates")}
-        />
-      )}
-      {view === "usetemplates" && (
-        <UseTemplates
-          selected={selectedTemplates}
-          onBack={() => setView("templates")}
-          onCreate={() => setView("templates")}
-          onreceptionist={() => setView("receptionist")}
-          onsalesagent={() => setView("saleagent")}
-          onsupportagent={() => setView("supportagent")}
-        />
-      )}
-    </>
+    </div>
   );
 }

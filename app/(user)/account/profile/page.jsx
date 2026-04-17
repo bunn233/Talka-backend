@@ -149,7 +149,7 @@ export default function ProfilePage() {
       {showSuccessModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-[#161223] border border-white/10 rounded-[2.5rem] p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-emerald-500 to-[#BE7EC7] flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+            <div className="w-20 h-20 rounded-full bg-[#BE7EC7] flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
               <Check className="text-white" size={40} strokeWidth={3} />
             </div>
             <h2 className="text-2xl font-black text-white tracking-tight mb-2">Update Successful!</h2>
@@ -158,7 +158,7 @@ export default function ProfilePage() {
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#BE7EC7] to-pink-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:shadow-[#BE7EC7]/40 transition-all active:scale-95"
+              className="w-full py-4 rounded-2xl bg-[#BE7EC7] text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:shadow-[#BE7EC7]/40 transition-all active:scale-95"
             >
               Continue
             </button>
@@ -249,7 +249,7 @@ export default function ProfilePage() {
 
             <div className="pt-10 flex flex-col sm:flex-row items-center justify-end gap-6 border-t border-white/5">
               <button type="button" onClick={() => window.location.reload()} className="text-xs font-black uppercase tracking-widest text-white/20 hover:text-white/60 transition-colors">Cancel</button>
-              <button type="submit" disabled={isSaving} className="w-full sm:w-auto flex items-center justify-center gap-3 px-12 py-4 rounded-2xl bg-gradient-to-r from-[#BE7EC7] to-pink-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-[#BE7EC7]/20 hover:shadow-[#BE7EC7]/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              <button type="submit" disabled={isSaving} className="w-full sm:w-auto flex items-center justify-center gap-3 px-12 py-4 rounded-2xl bg-[#BE7EC7] text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-[#BE7EC7]/20 hover:shadow-[#BE7EC7]/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                 {isSaving ? (
                   <><Loader2 className="animate-spin" size={16} /> Saving...</>
                 ) : (

@@ -26,23 +26,35 @@ export const authOptions = {
             where: { email: credentials.email }
           });
 
-          if (!user) return null;
+          // 1. เช็คว่ามีผู้ใช้นี้ไหม
+          if (!user) {
+            throw new Error("ไม่พบผู้ใช้งานนี้ในระบบ");
+          }
 
+          //  2. เช็คว่ายืนยันอีเมล (OTP) หรือยัง? ถ้ายังให้เตะออก
+          if (!user.emailVerified) {
+            throw new Error("กรุณายืนยันอีเมล (OTP) ก่อนเข้าสู่ระบบ");
+          }
+
+          // 3. เช็ครหัสผ่าน
           const isMatch = await bcrypt.compare(credentials.password, user.password);
           
-          if (isMatch) {
-            return { 
-                id: user.user_id.toString(), 
-                name: user.username, 
-                email: user.email, 
-                role: user.role,
-                image: user.profile_image?.startsWith("http") ? user.profile_image : null 
-            };
+          if (!isMatch) {
+            throw new Error("รหัสผ่านไม่ถูกต้อง");
           }
-          return null;
+
+          // ถ้าผ่านหมด ส่งข้อมูลกลับไปทำ Session
+          return { 
+              id: user.user_id.toString(), 
+              name: user.username, 
+              email: user.email, 
+              role: user.role,
+              image: user.profile_image?.startsWith("http") ? user.profile_image : null 
+          };
         } catch (error) {
           console.error("NextAuth error:", error);
-          return null;
+          // ส่ง error message กลับไปให้หน้าบ้านแสดงผล
+          throw new Error(error.message || "เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
         }
       }
     })
@@ -50,6 +62,7 @@ export const authOptions = {
   session: { strategy: "jwt" },
   callbacks: {
     async signIn({ user, account, profile }) {
+      // 🔥 จัดการตอน Login ผ่าน Google
       if (account.provider === "google") {
         try {
           const existingUser = await prisma.user.findUnique({
@@ -57,6 +70,7 @@ export const authOptions = {
           });
 
           if (!existingUser) {
+            // สร้างบัญชีใหม่และถือว่า "ยืนยันอีเมลแล้ว" ทันที
             await prisma.user.create({
               data: {
                 username: user.name,
@@ -65,14 +79,22 @@ export const authOptions = {
                 profile_image: user.image,
                 role: "USER",
                 online_status: "ONLINE",
-                is_setup: false
+                is_setup: false,
+                emailVerified: new Date()
               },
             });
-          } else if (!existingUser.profile_image && user.image) {
-            await prisma.user.update({
-              where: { email: user.email },
-              data: { profile_image: user.image }
-            });
+          } else {
+            // ถ้ามีบัญชีอยู่แล้ว อัปเดตรูปหรือยืนยันอีเมลให้ (เผื่อกรณีเคยสมัครแบบกรอกรหัสไว้แต่ลืมใส่ OTP)
+            const updates = {};
+            if (!existingUser.profile_image && user.image) updates.profile_image = user.image;
+            if (!existingUser.emailVerified) updates.emailVerified = new Date();
+
+            if (Object.keys(updates).length > 0) {
+              await prisma.user.update({
+                where: { email: user.email },
+                data: updates
+              });
+            }
           }
           return true;
         } catch (error) {
@@ -84,7 +106,6 @@ export const authOptions = {
     },
 
     async jwt({ token, user, trigger, session }) {
-
       if (trigger === "update" && session) {
         token.name = session.name;
         token.is_setup = session.is_setup;

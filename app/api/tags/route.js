@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { pusherServer } from "@/lib/pusher";
 
 const prisma = new PrismaClient();
 
@@ -46,6 +47,10 @@ export async function POST(request) {
                 description: description,
             },
         });
+
+        try {
+            await pusherServer.trigger('global-tags', 'tag-updated', { message: "New tag created" });
+        } catch (e) { console.error("Pusher error:", e); }
 
         return NextResponse.json({
             id: newTag.tag_id,

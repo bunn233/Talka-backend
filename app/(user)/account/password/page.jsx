@@ -84,7 +84,7 @@ export default function ChangePasswordPage() {
                         <div className="absolute -top-12 -left-12 w-32 h-32 bg-[#BE7EC7]/10 blur-[60px] rounded-full"></div>
                         
                         <div className="relative z-10">
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#BE7EC7] to-pink-600 flex items-center justify-center mb-6 shadow-lg shadow-[#BE7EC7]/20">
+                            <div className="w-14 h-14 rounded-2xl bg-[#BE7EC7] flex items-center justify-center mb-6 shadow-lg shadow-[#BE7EC7]/20">
                                 <ShieldCheck className="text-white" size={28} />
                             </div>
                             

@@ -1,49 +1,95 @@
 "use client";
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { 
   Home, Save, Globe, Clock, Monitor, ShieldCheck, 
   Settings2, Plus, Users, MessageSquare, AlertCircle, Trash2, Camera
 } from "lucide-react";
 
 function GeneralInfoContent() {
-  const searchParams = useSearchParams();
-  const workspaceId = searchParams.get("id");
-
-  // --- States ---
+  const [workspaceId, setWorkspaceId] = useState(null);
   const [workspaceName, setWorkspaceName] = useState("");
   const [timeout, setTimeoutValue] = useState(30);
   const [timezone, setTimezone] = useState("(GMT+07:00) Asia/Bangkok");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   
-  // Mock Usage Data
-  const [usage] = useState({
-    users: 6,
+  const [usage, setUsage] = useState({
+    users: 0,
     maxUsers: 10,
-    messages: 1420,
+    messages: 1420, 
     maxMessages: 5000,
-    storage: 0.8, // GB
+    storage: 0.8, 
     maxStorage: 2
   });
-
+  
   useEffect(() => {
-    const fetchWorkspaceInfo = async () => {
+    const loadWorkspaceAndInfo = async () => {
       try {
         setLoading(true);
-        // [Mock Data Simulation]
-        setTimeout(() => {
-          setWorkspaceName("My Workspace");
-          setLoading(false);
-        }, 500);
+        const wsRes = await fetch("/api/users/current-workspace");
+        if (!wsRes.ok) throw new Error("Failed to fetch workspace ID");
+        const wsData = await wsRes.json();
+
+        const activeWsId = wsData.activeWorkspaceId;
+        
+        if (!activeWsId) {
+            console.error("No active workspace found");
+            setLoading(false);
+            return;
+        }
+        
+        setWorkspaceId(activeWsId);
+
+        const res = await fetch(`/api/workspaces/general?wsId=${activeWsId}`);
+        const data = await res.json();
+
+        if (data.success) {
+            setWorkspaceName(data.workspace.name);
+            setUsage(prev => ({
+                ...prev,
+                users: data.workspace._count.members 
+            }));
+        } else {
+            console.error(data.error);
+        }
       } catch (error) {
         console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchWorkspaceInfo();
-  }, [workspaceId]);
 
-  const handleSave = () => {
-    alert("Configuration updated successfully!");
+    loadWorkspaceAndInfo();
+  }, []);
+
+  const handleSave = async () => {
+    if (!workspaceId) return;
+    setSaving(true);
+
+    try {
+        const res = await fetch("/api/workspaces/general", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                wsId: workspaceId, 
+                name: workspaceName 
+            })
+        });
+
+        const data = await res.json();
+        
+        if (data.success) {
+            alert("✅ Configuration updated successfully!");
+            window.dispatchEvent(new Event("user_updated"));
+        } else {
+            alert(`❌ Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error("Save Error:", error);
+        alert("❌ Failed to update workspace.");
+    } finally {
+        setSaving(false);
+    }
   };
 
   if (loading) return (
@@ -234,9 +280,14 @@ function GeneralInfoContent() {
             <div className="flex justify-end pt-8 border-t border-white/5">
               <button
                 onClick={handleSave}
-                className="flex items-center gap-3 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white px-10 py-4 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_25px_rgba(190,126,199,0.3)] transform active:scale-95"
+                disabled={saving}
+                className="flex items-center gap-3 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white px-10 py-4 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_25px_rgba(190,126,199,0.3)] transform active:scale-95 disabled:opacity-50"
               >
-                <Save size={18} /> Update Workspace Info
+                {saving ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                    <><Save size={18} /> Update Workspace Info</>
+                )}
               </button>
             </div>
 

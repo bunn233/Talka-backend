@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import Pusher from "pusher-js";
 
 // ส่วนประกอบ UI ต่างๆ
 import ChatList from "@/app/components/Chat/ChatList.jsx";
@@ -37,9 +38,13 @@ function ChatPageContent() {
     const [selectedChatId, setSelectedChatId] = useState(null);
     const selectedChat = chats.find(chat => chat.id === selectedChatId);
     
+    const selectedChatIdRef = useRef(null);
+    useEffect(() => {
+        selectedChatIdRef.current = selectedChatId;
+    }, [selectedChatId]);
+
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // State สำหรับ UI Modals
     const [isAddTagModalOpen, setIsAddTagModalOpen] = useState(false);
     const [isContactDetailsOpen, setIsContactDetailsOpen] = useState(false);
     const [isAddNoteOpen, setIsAddNoteOpen] = useState(false);
@@ -51,24 +56,72 @@ function ChatPageContent() {
     const [activeFilter, setActiveFilter] = useState("All");
     const [activeCompanyFilter, setActiveCompanyFilter] = useState(null);
     
-    const [currentUser, setCurrentUser] = useState({ name: "Admin", role: "Admin", avatar: "A" });
+    const [currentUser, setCurrentUser] = useState({ name: "Agent", role: "Admin", avatar: "A" });
 
     const [activityLogs, setActivityLogs] = useState([]);
     const [activePrompts, setActivePrompts] = useState(DEFAULT_AI_PROMPTS.filter(p => p.active === true));
     const [availableAgents, setAvailableAgents] = useState(DEFAULT_AI_AGENTS);
     const [availableTags, setAvailableTags] = useState(DEFAULT_TAGS);
 
-    // 🟢 Fetch Initial Data from API
+    // 🟢 Fetch Initial Data (ดึงเฉพาะ LINE และตรงกับ Workspace ปัจจุบัน)
     useEffect(() => {
         const loadData = async () => {
             try {
-                const res = await fetch('/api/line/chat-sessions');
+                //  1. ดึง ID ของทีมปัจจุบันจาก API 
+                const wsRes = await fetch("/api/users/current-workspace");
+                if (!wsRes.ok) throw new Error("Failed to get workspace");
+                const wsData = await wsRes.json();
+                
+                const activeWsId = wsData.activeWorkspaceId;
+                if (!activeWsId) {
+                    console.error("No active workspace found.");
+                    setIsLoaded(true);
+                    return;
+                }
+
+                //  แอบดึงชื่อจริงจาก Profile
+                try {
+                    const profileRes = await fetch('/api/users/profile');
+                    if (profileRes.ok) {
+                        const profileData = await profileRes.json();
+                        if (profileData.profile) {
+                            setCurrentUser({
+                                id: profileData.profile.user_id,
+                                name: profileData.profile.username || "Agent",
+                                role: profileData.profile.role,
+                                avatar: profileData.profile.profile_image || "A",
+                            });
+                        }
+                    }
+                } catch (e) { console.error("Fetch profile error", e); }
+
+                //  2. ยิง API ขอแชท โดยแนบ ID ทีมไปกับ URL
+                const res = await fetch(`/api/chats/chat-sessions?wsId=${activeWsId}`);
                 if (!res.ok) throw new Error('API Error');
                 const data = await res.json();
-                setChats(Array.isArray(data) ? data : []);
+                
+                //  3. กรองเอาเฉพาะ LINE
+                const lineChats = Array.isArray(data) 
+                    ? data.filter(c => c.platform === 'LINE') 
+                    : [];
+                
+                setChats(lineChats);
+
+                //  4. ดึง Tags 
+                const tagRes = await fetch("/api/tags"); 
+                if (tagRes.ok) {
+                  const tagData = await tagRes.json();
+                  const safeTags = tagData.map((t) => ({
+                    id: t.tag_id || t.id,
+                    name: t.name || t.tag_name || "Unknown",
+                    color: t.color || "#BE7EC7",
+                    emoji: t.emoji || "🏷️",
+                  }));
+                  setAvailableTags(safeTags.length > 0 ? safeTags : DEFAULT_TAGS);
+                }
+
             } catch (error) {
-                console.error('❌ Failed to load chats:', error);
-                // Fallback: ใช้ข้อมูลว่างๆ เพื่อให้ UI แสดงได้
+                console.error('❌ Failed to load LINE chats:', error);
                 setChats([]);
             } finally {
                 setIsLoaded(true);
@@ -77,87 +130,135 @@ function ChatPageContent() {
         loadData();
     }, []);
 
-    // 🟢 SSE (Server-Sent Events) - Real-time Updates
+    const reloadChats = async () => {
+        try {
+            const wsRes = await fetch("/api/users/current-workspace");
+            const wsData = await wsRes.json();
+            const activeWsId = wsData.activeWorkspaceId;
+            if (!activeWsId) return;
+
+            const chatRes = await fetch(`/api/chats/chat-sessions?wsId=${activeWsId}&t=${Date.now()}`, { cache: 'no-store' });
+            if (chatRes.ok) {
+                const chatData = await chatRes.json();
+                const lineChats = Array.isArray(chatData) ? chatData.filter(c => c.platform === 'LINE') : [];
+                setChats(lineChats);
+            }
+        } catch (error) {
+            console.error("❌ Failed to reload chats:", error);
+        }
+    };
+
+    // 🟢 2. ดักฟัง Pusher (Real-time ล้วนๆ)
     useEffect(() => {
         if (!isLoaded) return;
 
-        let eventSource;
-        const connectSSE = () => {
-            try {
-                eventSource = new EventSource('/api/line/webhook?stream=true');
+        const setupPusher = async () => {
+            const wsRes = await fetch("/api/users/current-workspace");
+            const wsData = await wsRes.json();
+            const activeWsId = wsData.activeWorkspaceId;
+            if (!activeWsId) return;
 
-                eventSource.addEventListener('message', (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        
-                        setChats(prev => {
-                            const isExistingChat = prev.some(chat => chat.id === data.chatId);
+            Pusher.logToConsole = false;
+            const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+                cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+            });
 
-                            if (isExistingChat) {
-                                return prev.map(chat => {
-                                    if (chat.id === data.chatId) {
-                                        return {
-                                            ...chat,
-                                            messages: [...(chat.messages || []), {
-                                                id: Date.now(),
-                                                from: data.from,
-                                                text: data.text,
-                                                time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-                                                timestamp: new Date(data.timestamp)
-                                            }],
-                                            lastMessage: data.text
-                                        };
-                                    }
-                                    return chat;
-                                });
-                            } else {
-                                const newChat = {
-                                    id: data.chatId,
-                                    name: data.customerName || "LINE User", 
-                                    platform: "LINE",
-                                    status: "OPEN",
-                                    messages: [{
-                                        id: Date.now(),
-                                        from: data.from,
+            const channel = pusher.subscribe(`workspace-${activeWsId}`);
+
+            channel.bind('channel-updated', function(data) {
+                setSelectedChatId(null); 
+                reloadChats(); 
+            });
+
+            channel.bind('chat-details-updated', function(data) {
+                reloadChats(); 
+            });
+
+            channel.bind('log-updated', function(data) {
+                if (selectedChatIdRef.current && String(selectedChatIdRef.current) === String(data.chatId)) {
+                   // ถ้าพี่มี API /api/Chatlog พี่สามารถยิงดึง logs ใหม่ได้ที่นี่
+                }
+            });
+
+            // รับข้อความ
+            channel.bind('webhook-event', function(data) {
+                if (!data || !data.chatId) return;
+                if (data.platform && data.platform !== "LINE") return; // กรองเฉพาะ LINE
+
+                if (data.action === "SYNC_MESSAGE") {
+                    setChats((prev) => {
+                        const isExistingChat = prev.some((c) => String(c.id) === String(data.chatId));
+                        const isViewing = String(selectedChatIdRef.current) === String(data.chatId);
+
+                        if (isExistingChat) {
+                            return prev.map((chat) => {
+                                if (String(chat.id) === String(data.chatId)) {
+                                    let updatedMessages = [...(chat.messages || [])];
+                                    const tempMsgIndex = updatedMessages.findIndex(m => 
+                                        (m.text === data.text && Math.abs(new Date(m.timestamp) - new Date(data.timestamp)) < 5000)
+                                    );
+
+                                    const newMsg = {
+                                        id: Date.now() + Math.random(),
+                                        external_id: data.messageId,
+                                        from: data.from || "customer",
+                                        senderName: data.senderName, 
                                         text: data.text,
-                                        time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-                                        timestamp: new Date(data.timestamp)
-                                    }],
-                                    lastMessage: data.text
-                                };
-                                return [newChat, ...prev];
-                            }
-                        });
+                                        type: data.type,
+                                        time: data.time || new Date(data.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+                                        timestamp: new Date(data.timestamp),
+                                    };
 
-                    } catch (error) {
-                        console.error('❌ Error parsing SSE data:', error);
-                    }
-                });
+                                    if (tempMsgIndex !== -1) updatedMessages[tempMsgIndex] = newMsg;
+                                    else updatedMessages.push(newMsg);
 
-                eventSource.addEventListener('error', (error) => {
-                    console.error('❌ SSE Connection Error:', error);
-                    eventSource.close();
-                    setTimeout(connectSSE, 3000);
-                });
+                                    return {
+                                        ...chat,
+                                        name: data.name || data.customerName || chat.name,
+                                        imgUrl: data.imgUrl || chat.imgUrl,
+                                        messages: updatedMessages,
+                                        lastMessage: data.type === "IMAGE" ? "ส่งรูปภาพ" : data.text,
+                                        unreadCount: data.from === "customer" && !isViewing ? (chat.unreadCount || 0) + 1 : chat.unreadCount
+                                    };
+                                }
+                                return chat;
+                            });
+                        } else {
+                            setTimeout(() => { reloadChats(); }, 500);
+                            return prev;
+                        }
+                    });
+                }
 
-            } catch (error) {
-                console.error('❌ Failed to connect SSE:', error);
-                setTimeout(connectSSE, 3000);
-            }
+                if (data.action === "MOVE_CHAT") {
+                    setChats((prev) => prev.map((chat) => String(chat.id) === String(data.chatId) ? { ...chat, columnId: data.columnId } : chat));
+                }
+
+                if (data.action === "DELETE_MESSAGE" || data.action === "EDIT_MESSAGE") {
+                    setChats((prev) => prev.map((chat) => {
+                        if (String(chat.id) === String(data.chatId)) {
+                            const updatedMessages = (chat.messages || []).map((m) => {
+                                const isMatch = String(m.external_id) === String(data.messageId) || String(m.id) === String(data.messageId);
+                                return isMatch ? { ...m, text: data.text } : m;
+                            });
+                            return { ...chat, messages: updatedMessages, lastMessage: data.text };
+                        }
+                        return chat;
+                    }));
+                }
+            });
+
+            return () => {
+                pusher.unsubscribe(`workspace-${activeWsId}`);
+            };
         };
 
-        connectSSE();
-
-        return () => {
-            if (eventSource) {
-                eventSource.close();
-            }
-        };
+        setupPusher();
     }, [isLoaded]);
 
     useEffect(() => {
         const urlId = searchParams.get('id');
-        if (urlId) {
+        if (urlId && chats.length > 0) {
             const idNum = parseInt(urlId);
             const targetChat = chats.find(c => c.id === idNum);
             if (targetChat) {
@@ -168,93 +269,130 @@ function ChatPageContent() {
 
     const addLog = (chatId, type, detail) => {
         if (!chatId) return;
-        const newLog = {
-            id: Date.now() + Math.random(),
-            chatId,
-            type,
-            detail,
-            timestamp: new Date().toISOString(),
-            by: currentUser.name
-        };
+        const newLog = { id: Date.now() + Math.random(), chatId, type, detail, timestamp: new Date().toISOString(), by: currentUser.name };
         setActivityLogs(prev => [...prev, newLog]);
     };
 
     const handleToggleTag = async (tagName) => {
         if (!selectedChat) return;
-        addLog(selectedChat.id, 'tag', `Changed tag to "${tagName}"`);
+
+        setChats(currentChats => currentChats.map(chat => {
+            if (chat.id === selectedChat.id) {
+                const currentTags = chat.tags || [];
+                const hasTag = currentTags.includes(tagName);
+                const newTags = hasTag ? currentTags.filter(t => t !== tagName) : [...currentTags, tagName];
+                return { ...chat, tags: newTags };
+            }
+            return chat;
+        }));
+
+        try {
+            const res = await fetch(`/api/chat-sessions/${selectedChat.id}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tagName })
+            });
+            if (!res.ok) throw new Error("Failed to update tag");
+            const result = await res.json();
+            const actionText = result.action === 'added' ? 'Added' : 'Removed';
+            addLog(selectedChat.id, 'tag', `${actionText} tag "${tagName}"`);
+        } catch (error) {
+            console.error('❌ Error toggling tag:', error);
+        }
     };
 
     const handleUpdateStatus = async (newStatus) => {
         if (!selectedChat) return;
-        addLog(selectedChat.id, 'status', `Changed status from "${selectedChat.status}" to "${newStatus}"`);
-        setChats(currentChats =>
-            currentChats.map(chat =>
-                chat.id === selectedChat.id ? { ...chat, status: newStatus } : chat
-            )
-        );
+
+        const previousStatus = selectedChat.status;
+        setChats(currentChats => currentChats.map(chat => chat.id === selectedChat.id ? { ...chat, status: newStatus } : chat));
+
+        try {
+            const res = await fetch(`/api/chat-sessions/${selectedChat.id}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+
+            if (!res.ok) throw new Error("Failed to update status");
+            addLog(selectedChat.id, 'status', `Changed status from "${previousStatus}" to "${newStatus}"`);
+
+        } catch (error) {
+            console.error('❌ Error updating status:', error);
+            alert("ไม่สามารถอัปเดตสถานะได้ ระบบจะย้อนกลับค่าเดิม");
+            setChats(currentChats => currentChats.map(chat => chat.id === selectedChat.id ? { ...chat, status: previousStatus } : chat));
+        }
     };
 
     const handleUpdateContactInfo = async (contactId, updatedInfo) => {
         addLog(contactId, 'contact', `Updated information`);
-        setChats(currentChats =>
-            currentChats.map(chat =>
-                chat.id === contactId ? { ...chat, ...updatedInfo } : chat
-            )
-        );
+        setChats(currentChats => currentChats.map(chat => chat.id === contactId ? { ...chat, ...updatedInfo } : chat));
     };
 
     const handleAddNote = async (noteData) => {
         if (!selectedChatId) return;
         addLog(selectedChatId, 'note', `Added note: "${noteData.title}"`);
-        setChats(currentChats =>
-            currentChats.map(chat =>
-                chat.id === selectedChatId ? { ...chat, notes: [...(chat.notes || []), noteData] } : chat
-            )
-        );
+        setChats(currentChats => currentChats.map(chat => chat.id === selectedChatId ? { ...chat, notes: [...(chat.notes || []), noteData] } : chat));
     };
 
-    const handleSendMessage = async (chatId, text) => {
-        if (!chatId || !text.trim()) return;
+    // 🔥 3. ส่งข้อความ เปลี่ยนให้ใช้ API รวมและแนบ Workspace ID + ชื่อคนส่ง
+    const handleSendMessage = async (chatId, text, files = []) => {
+        if (!chatId) return;
+        if (!text.trim() && (!files || files.length === 0)) return;
 
         try {
-            const response = await fetch('/api/line/messages/send', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    chat_session_id: chatId,
-                    text: text.trim(),
-                }),
-            });
+            const wsRes = await fetch("/api/users/current-workspace");
+            const wsData = await wsRes.json();
+            const activeWsId = wsData.activeWorkspaceId;
+
+            if (!activeWsId) { alert("ไม่พบข้อมูล Workspace กรุณารีเฟรชหน้าเว็บ"); return; }
+
+            const targetChat = chats.find((c) => c.id === chatId);
+            if (!targetChat) return;
+
+            let apiEndpoint = "/api/messages/send";
+            const newMessages = [];
+
+            if (text.trim()) {
+                newMessages.push({ id: Date.now(), from: "AGENT", senderName: currentUser.name, text: text.trim(), time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date() });
+            }
+
+            if (files && files.length > 0) {
+                files.forEach((file, index) => {
+                    newMessages.push({ id: Date.now() + index + 1, from: "AGENT", senderName: currentUser.name, type: "IMAGE", text: URL.createObjectURL(file), time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }), timestamp: new Date() });
+                });
+            }
+
+            setChats((currentChats) => currentChats.map((chat) => chat.id === chatId ? { ...chat, messages: [...(chat.messages || []), ...newMessages], lastMessage: text.trim() || (files.length > 0 ? "ส่งรูปภาพ" : "") } : chat));
+
+            let response;
+            if (files && files.length > 0) {
+                const formData = new FormData();
+                formData.append("chatSessionId", chatId);
+                formData.append("text", text.trim());
+                formData.append("workspaceId", activeWsId); 
+                files.forEach((file) => formData.append("files", file));
+                response = await fetch(apiEndpoint, { method: "POST", body: formData });
+            } else {
+                response = await fetch(apiEndpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatSessionId: chatId, text: text.trim(), workspaceId: activeWsId }) });
+            }
+
+            if (response.status === 403) {
+                const errorData = await response.json();
+                if (errorData.error === "KICKED") {
+                    alert("⚠️ " + errorData.message);
+                    window.location.href = "/waiting"; 
+                    return;
+                }
+            }
 
             if (!response.ok) {
                 const error = await response.json();
-                alert('Failed to send message: ' + error.error);
+                alert('Failed to send message: ' + (error.error || error.message));
                 return;
             }
 
             addLog(chatId, 'message', `Sent message`);
-
-            setChats(currentChats =>
-                currentChats.map(chat => {
-                    if (chat.id === chatId) {
-                        const newMessage = {
-                            id: Date.now(),
-                            from: "AGENT",
-                            text: text,
-                            time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-                            timestamp: new Date()
-                        };
-                        return {
-                            ...chat,
-                            messages: [...chat.messages, newMessage],
-                            lastMessage: text,
-                        };
-                    }
-                    return chat;
-                })
-            );
 
         } catch (error) {
             alert('Error sending message: ' + error.message);
@@ -273,12 +411,8 @@ function ChatPageContent() {
         .sort((a, b) => (statusPriority[a.status] || 2) - (statusPriority[b.status] || 2));
 
     const closeAllPanels = () => {
-        setIsAddTagModalOpen(false);
-        setIsContactDetailsOpen(false);
-        setIsAddNoteOpen(false);
-        setIsChangeStatusOpen(false);
-        setIsActivityLogOpen(false);
-        setIsSendToBoardOpen(false);
+        setIsAddTagModalOpen(false); setIsContactDetailsOpen(false); setIsAddNoteOpen(false);
+        setIsChangeStatusOpen(false); setIsActivityLogOpen(false); setIsSendToBoardOpen(false);
     };
 
     if (!isLoaded) {
@@ -286,7 +420,7 @@ function ChatPageContent() {
             <div className="flex-1 flex h-full items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <div className="w-8 h-8 border-4 border-[#BE7EC7]/30 border-t-[#BE7EC7] rounded-full animate-spin"></div>
-                    <div className="text-[#BE7EC7] text-sm font-medium">Loading Chat Data...</div>
+                    <div className="text-[#BE7EC7] text-sm font-medium">Loading LINE Chats...</div>
                 </div>
             </div>
         );
@@ -294,49 +428,40 @@ function ChatPageContent() {
 
     return (
         <div className="flex-1 flex flex-col h-full max-h-full overflow-hidden bg-transparent">
-            
+
             <div className="flex-shrink-0 px-7 py-4 border-b border-white/5">
-                <ChatFitter 
-                    onFilterChange={setActiveFilter} 
-                    availableCompanies={availableCompanies} 
-                    onCompanyChange={setActiveCompanyFilter} 
-                />
+                <ChatFitter onFilterChange={setActiveFilter} availableCompanies={availableCompanies} onCompanyChange={setActiveCompanyFilter} />
             </div>
 
-            {/* Main Chat Area */}
             <div className="flex-1 flex gap-5 px-7 py-3 overflow-hidden">
-                
-                {/* 1. Chat List (ซ้าย) */}
                 <ChatList 
                     chats={filteredChats} 
-                    onSelectChat={(chat) => setSelectedChatId(chat.id)} 
+                    onSelectChat={async (chat) => {
+                        setSelectedChatId(chat.id);
+                        setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, unreadCount: 0 } : c));
+                        try { await fetch(`/api/chats/${chat.id}/read`, { method: "PATCH" }); } catch (err) { console.error("Failed to mark as read", err); }
+                    }} 
                     selectedId={selectedChatId} 
                     availableTags={availableTags} 
                 />
 
-                {/* 2. Chat Message & Panels (ขวา) */}
                 <div className="flex-1 flex gap-5 overflow-hidden relative">
                     <ChatMessage 
                         chat={selectedChat} 
                         availableAgents={availableAgents} 
-                        onSelectAiAgent={(id, agent) => {
-                            setChats(prev => prev.map(c => c.id === id ? { ...c, activeAiAgent: agent, isAiMode: !!agent } : c));
-                        }} 
+                        onSelectAiAgent={(id, agent) => { setChats(prev => prev.map(c => c.id === id ? { ...c, activeAiAgent: agent, isAiMode: !!agent } : c)); }} 
                         aiPrompts={activePrompts} 
                         currentUser={currentUser} 
                         onSendMessage={handleSendMessage} 
                         availableTags={availableTags} 
                     />
-                    
-                    {/* Right Side Panels */}
+
                     {isAddTagModalOpen && <AddTag onClose={() => setIsAddTagModalOpen(false)} availableTags={availableTags} currentTargets={selectedChat?.tags || []} onToggleTag={handleToggleTag} />}
                     {isContactDetailsOpen && <ContactDetails onClose={() => setIsContactDetailsOpen(false)} contact={selectedChat} onUpdateContact={handleUpdateContactInfo} />}
-                    {isAddNoteOpen && <AddNote onClose={() => setIsAddNoteOpen(false)} onSaveNote={handleAddNote} currentNotes={selectedChat?.notes || []} onDeleteNote={(id) => {
-                        setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, notes: c.notes.filter(n => n.id !== id) } : c));
-                    }} />}
+                    {isAddNoteOpen && <AddNote onClose={() => setIsAddNoteOpen(false)} onSaveNote={handleAddNote} currentNotes={selectedChat?.notes || []} onDeleteNote={(id) => { setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, notes: c.notes.filter(n => n.id !== id) } : c)); }} />}
                     {isChangeStatusOpen && <ChangeStatus onClose={() => setIsChangeStatusOpen(false)} availableStatus={ALL_AVAILABLE_STATUS} currentTargets={selectedChat?.status ? [selectedChat.status] : []} onToggleStatus={handleUpdateStatus} />}
                     {isActivityLogOpen && <ActivityLogPanel onClose={() => setIsActivityLogOpen(false)} logs={activityLogs.filter(log => log.chatId === selectedChatId)} />}
-                    
+
                     {selectedChatId && (
                         <ControlPanel 
                             onOpenAddTagModal={() => { closeAllPanels(); setIsAddTagModalOpen(true); }}
@@ -347,8 +472,7 @@ function ChatPageContent() {
                             onOpenSendToBoard={() => { closeAllPanels(); setIsSendToBoardOpen(true); }}
                         />
                     )}
-                    
-                    {/* AI Button ลอยอยู่มุมขวาล่าง */}
+
                     <div className="absolute bottom-6 right-6 z-50">
                         <AiSuppBtn onClick={() => setIsAiAssistantOpen(!isAiAssistantOpen)} isOpen={isAiAssistantOpen} />
                     </div>
@@ -364,11 +488,10 @@ function ChatPageContent() {
 export default function ChatPage() {
     return (
         <Suspense fallback={
-            // 🛠️ เปลี่ยน h-screen เป็น h-full
             <div className="flex-1 flex h-full items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                    <div className="w- h-8 border-4 border-[#BE7EC7]/30 border-t-[#BE7EC7] rounded-full animate-spin"></div>
-                    <div className="text-[#BE7EC7] text-sm font-medium">Loading Chat Data...</div>
+                    <div className="w-8 h-8 border-4 border-[#BE7EC7]/30 border-t-[#BE7EC7] rounded-full animate-spin"></div>
+                    <div className="text-[#BE7EC7] text-sm font-medium">Loading LINE Chats...</div>
                 </div>
             </div>
         }>

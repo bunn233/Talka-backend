@@ -9,20 +9,19 @@ export default function NotificationSettingsPage() {
     const [inApp, setInApp] = useState(true);
 
     const labelClass = "block text-[10px] font-black uppercase tracking-[0.2em] text-white/30 mb-1 ml-1";
-    const itemContainerClass = "flex items-center justify-between p-5 rounded-[1.8rem] bg-[#1F192E] border border-white/5 hover:border-[#BE7EC7]/30 transition-all duration-300 group shadow-inner";
+    const itemContainerClass = "flex items-center justify-between p-5 rounded-[1.8rem] bg-[#1F192E] border border-white/5 hover:border-[#BE7EC7]/30 transition-all duration-300 group shadow-inner w-full";
 
     return (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex flex-col lg:flex-row gap-12 items-stretch min-h-[500px]">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 h-full w-full">
+            <div className="flex flex-col xl:flex-row gap-12 xl:gap-20 items-stretch min-h-[500px] w-full">
 
                 {/* LEFT COLUMN: Sidebar info */}
-                <div className="w-full lg:w-80 shrink-0 flex flex-col">
+                <div className="w-full xl:w-[320px] shrink-0 flex flex-col">
                     <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] p-8 h-full relative overflow-hidden flex flex-col">
-                        {/* Decorative Glow */}
                         <div className="absolute -top-12 -left-12 w-32 h-32 bg-[#BE7EC7]/10 blur-[60px] rounded-full"></div>
                         
                         <div className="relative z-10">
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#BE7EC7] to-pink-600 flex items-center justify-center mb-6 shadow-lg shadow-[#BE7EC7]/20">
+                            <div className="w-14 h-14 rounded-2xl bg-[#BE7EC7] flex items-center justify-center mb-6 shadow-lg shadow-[#BE7EC7]/20">
                                 <BellRing className="text-white" size={28} />
                             </div>
 
@@ -32,7 +31,6 @@ export default function NotificationSettingsPage() {
                             </p>
                         </div>
 
-                        {/* Pro Tip Card */}
                         <div className="mt-auto p-5 rounded-2xl bg-[#BE7EC7]/5 border border-[#BE7EC7]/10 relative overflow-hidden group/tip">
                             <div className="absolute top-0 right-0 p-2 opacity-10 group-hover/tip:scale-110 transition-transform">
                                 <Zap size={40} className="text-[#BE7EC7]" />
@@ -49,8 +47,8 @@ export default function NotificationSettingsPage() {
                 </div>
 
                 {/* Right Column: Settings List */}
-                <div className="flex-1 flex flex-col justify-center">
-                    <div className="mb-10">
+                <div className="flex-1 flex flex-col justify-center w-full">
+                    <div className="mb-10 w-full">
                         <div className="flex items-center gap-3 mb-1">
                             <h1 className="text-3xl font-black text-white tracking-tight">Notification Settings</h1>
                             <div className="p-2 bg-[#BE7EC7]/10 rounded-xl text-[#BE7EC7] hidden sm:block">
@@ -60,7 +58,7 @@ export default function NotificationSettingsPage() {
                         <p className="text-white/30 text-sm font-medium">Customize your digital communication experience.</p>
                     </div>
 
-                    <div className="space-y-4 max-w-2xl">
+                    <div className="space-y-4 w-full">
                         
                         {/* Setting Item: Email */}
                         <div className={itemContainerClass}>
@@ -73,8 +71,7 @@ export default function NotificationSettingsPage() {
                                     <p className="text-[11px] text-white/30 font-medium mt-0.5">Receive weekly digests and major system updates.</p>
                                 </div>
                             </div>
-                            {/* Toggle Switch */}
-                            <label className="relative inline-flex items-center cursor-pointer scale-110">
+                            <label className="relative inline-flex items-center cursor-pointer scale-110 shrink-0">
                                 <input type="checkbox" checked={emailNoti} onChange={() => setEmailNoti(!emailNoti)} className="sr-only peer" />
                                 <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 rtl:peer-checked:after:-translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#BE7EC7] shadow-lg"></div>
                             </label>
@@ -91,9 +88,9 @@ export default function NotificationSettingsPage() {
                                     <p className="text-[11px] text-white/30 font-medium mt-0.5">Instant alerts for security and critical login attempts.</p>
                                 </div>
                             </div>
-                            <label className="relative inline-flex items-center cursor-pointer scale-110">
+                            <label className="relative inline-flex items-center cursor-pointer scale-110 shrink-0">
                                 <input type="checkbox" checked={smsNoti} onChange={() => setSmsNoti(!smsNoti)} className="sr-only peer" />
-                                <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 rtl:peer-checked:after:-translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500 shadow-lg"></div>
+                                <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 rtl:peer-checked:after:-translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#BE7EC7] shadow-lg"></div>
                             </label>
                         </div>
 
@@ -108,23 +105,23 @@ export default function NotificationSettingsPage() {
                                     <p className="text-[11px] text-white/30 font-medium mt-0.5">Real-time banners and activity dots within the app.</p>
                                 </div>
                             </div>
-                            <label className="relative inline-flex items-center cursor-pointer scale-110">
+                            <label className="relative inline-flex items-center cursor-pointer scale-110 shrink-0">
                                 <input type="checkbox" checked={inApp} onChange={() => setInApp(!inApp)} className="sr-only peer" />
-                                <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 rtl:peer-checked:after:-translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500 shadow-lg"></div>
+                                <div className="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 rtl:peer-checked:after:-translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:start-[4px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#BE7EC7] shadow-lg"></div>
                             </label>
                         </div>
 
                     </div>
 
                     {/* Actions Area */}
-                    <div className="pt-10 mt-6 border-t border-white/5 flex items-center justify-end gap-6 max-w-2xl">
+                    <div className="pt-10 mt-6 border-t border-white/5 flex items-center justify-end gap-6 w-full">
                         <div className="hidden sm:flex items-center gap-2 text-[10px] font-black text-white/10 uppercase tracking-[0.3em] mr-auto">
                             <ShieldCheck size={14} />
                             <span>Preferences Secured</span>
                         </div>
                         
                         <button
-                            className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-4 rounded-2xl bg-gradient-to-r from-[#BE7EC7] to-pink-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-[#BE7EC7]/20 hover:shadow-[#BE7EC7]/40 hover:scale-[1.02] active:scale-95 transition-all"
+                            className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-4 rounded-2xl bg-[#BE7EC7] text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-[#BE7EC7]/20 hover:shadow-[#BE7EC7]/40 hover:scale-[1.02] active:scale-95 transition-all"
                         >
                             <Save size={16} />
                             Save Preferences

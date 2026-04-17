@@ -1,48 +1,40 @@
-"use client";
-import { useEffect, useState } from "react";
-import Sidebar from "../components/Layout/SideBar";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+// ⚠️ อย่าลืมแก้ path auth ให้ตรงกับโปรเจกต์พี่นะครับ
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
-export default function SidebarLayout({ children }) {
-    // 🟢 [BACKEND NOTE]: ตั้งค่า Default Background ไปก่อนระหว่างรอข้อมูลจาก API
-    const [bg, setBg] = useState("/images/Bg.jpg");
+// อิมพอร์ต ClientLayout ที่เราเพิ่งสร้างเมื่อกี้
+import ClientLayout from "./ClientLayout"; 
 
-    useEffect(() => {
+export default async function UserLayout({ children }) {
+    const session = await getServerSession(authOptions);
 
+    if (!session?.user?.email) {
+        redirect("/auth/login");
+    }
 
-        const fetchUserPreferences = async () => {
-            try {
-                // 🟢 โค้ดตัวอย่างสำหรับดึงข้อมูลจริง
-                // const response = await fetch('/api/user/preferences');
-                // const data = await response.json();
-                // if (data.backgroundUrl) {
-                //     setBg(data.backgroundUrl);
-                // }
-            } catch (error) {
-                console.error("Failed to load background preference:", error);
-            }
-        };
+    const dbUser = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        include: { workspaces: true }
+    });
 
-        fetchUserPreferences();
+    if (!dbUser) redirect("/auth/login");
 
-        const listener = (e) => {
-            setBg(e.detail);
-        };
-        window.addEventListener("background-changed", listener);
-        
-        return () => window.removeEventListener("background-changed", listener);
-    }, []);
+    if (!dbUser.is_setup) {
+        redirect("/setup");
+    }
+
+    // 🚨 เช็คว่ามีทีมหรือเปล่า ถ้าไม่มีเตะไปหน้ารอ
+    const workspaceCount = dbUser.workspaces.length;
+    if (workspaceCount === 0) {
+        redirect("/waiting");
+    } 
+
+    // 🟢 ถ้ามีทีม ก็ให้ ClientLayout (ที่มี Sidebar) มาห่อหน้าจอไว้
     return (
-        <div
-            className="flex h-screen bg-center bg-cover text-white overflow-hidden transition-all duration-300"
-            style={{ backgroundImage: `url(${bg})` }}
-        >
-            <div className="fixed top-0 left-0 h-full z-20">
-                <Sidebar />
-            </div>
-
-            <main className="flex-1 ml-[250px] h-full overflow-y-auto p-6">
-                {children}
-            </main>
-        </div>
+        <ClientLayout>
+            {children}
+        </ClientLayout>
     );
 }

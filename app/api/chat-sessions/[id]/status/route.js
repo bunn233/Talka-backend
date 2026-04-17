@@ -1,27 +1,33 @@
-// app/api/chat-sessions/[id]/status/route.js
 import { NextResponse } from 'next/server';
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma"; 
+import { pusherServer } from "@/lib/pusher";
 
-const prisma = new PrismaClient();
-
-export async function PATCH(request, { params }) {
+export async function PATCH(request, context) {
     try {
+        const params = await context.params;
         const id = parseInt(params.id);
-        const body = await request.json();
-        const { status } = body;
+        const { status } = await request.json();
 
-        // เช็คว่าส่งค่ามาครบไหม
         if (!id || !status) {
             return NextResponse.json({ error: 'Missing chat ID or status' }, { status: 400 });
         }
 
-        // อัปเดตข้อมูลใน Database (อ้างอิงตาม schema.prisma model ChatSession)
         const updatedChat = await prisma.chatSession.update({
             where: { chat_session_id: id },
             data: { status: status },
+            include: { channel: { select: { workspace_id: true } } } 
         });
 
-        // (Optional) คุณอาจจะบันทึก ActivityLog ลง DB ตรงนี้ด้วยก็ได้ถ้าต้องการเก็บใน DB
+        if (updatedChat.channel?.workspace_id) {
+            try {
+                await pusherServer.trigger(`workspace-${updatedChat.channel.workspace_id}`, 'chat-details-updated', {
+                    chatId: id,
+                    message: "เปลี่ยนสถานะแชท (Status) แล้ว"
+                });
+            } catch (e) {
+                console.error("Pusher Error:", e);
+            }
+        }
 
         return NextResponse.json({
             success: true,
@@ -30,7 +36,7 @@ export async function PATCH(request, { params }) {
         });
 
     } catch (error) {
-        console.error('Update status error:', error);
+        console.error('❌ Update status error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

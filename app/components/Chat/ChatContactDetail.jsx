@@ -30,12 +30,13 @@ export default function ContactDetails({ onClose, contact, onUpdateContact }) {
     );
   }
 
-  const handleSave = (field) => {
+  const handleSave = async (field) => {
     if (typeof onUpdateContact !== 'function') {
       console.error("onUpdateContact is not a function. Check page.jsx");
       return; 
     }
 
+    // 1. อัปเดตหน้าจอทันทีเพื่อให้ผู้ใช้รู้สึกว่าเร็ว
     if (field === 'phone') {
       onUpdateContact(contact.id, { phone: phone }); 
       setIsEditingPhone(false); 
@@ -47,6 +48,16 @@ export default function ContactDetails({ onClose, contact, onUpdateContact }) {
     if (field === 'country') {
       onUpdateContact(contact.id, { country: country });
       setIsEditingCountry(false);
+    }
+
+    try {
+      await fetch(`/api/chat-sessions/${contact.id}/contact`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, email, country }) 
+      });
+    } catch (error) {
+      console.error("❌ Failed to save contact info to database:", error);
     }
   };
 
@@ -67,8 +78,13 @@ export default function ContactDetails({ onClose, contact, onUpdateContact }) {
 
       {/* Profile Header */}
       <div className="flex items-center gap-4 mb-6">
-        <div className="w-16 h-16 bg-gradient-to-br from-[#BE7EC7] to-[#8a55b5] rounded-2xl flex items-center justify-center text-3xl shadow-lg shrink-0 text-white border border-white/10">
-          {contact.avatar}
+        {/* 🔥 แก้ไขการแสดงรูปภาพตรงนี้ครับ */}
+        <div className="w-16 h-16 bg-gradient-to-br from-[#BE7EC7] to-[#8a55b5] rounded-2xl flex items-center justify-center text-3xl shadow-lg shrink-0 text-white border border-white/10 overflow-hidden">
+          {contact.imgUrl ? (
+            <img src={contact.imgUrl} alt={contact.name} className="w-full h-full object-cover" />
+          ) : (
+            contact.avatar || contact.name?.charAt(0).toUpperCase() || "U"
+          )}
         </div>
         
         <div className="min-w-0">

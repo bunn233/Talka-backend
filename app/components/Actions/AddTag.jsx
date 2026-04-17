@@ -4,35 +4,21 @@ import { useState, useEffect } from "react";
 
 export default function AddTag({ onClose, availableTags = [], currentTargets = [], onToggleTag }) {
   
-  const [tagsList, setTagsList] = useState(availableTags);
+  const [tagsList, setTagsList] = useState([]);
   
   useEffect(() => {
-    setTagsList(availableTags);
+    // 🟢 ดึงข้อมูล Tag ให้ชัวร์ว่ามีทั้ง ID และ Name ครบถ้วน
+    const formattedTags = availableTags.map(t => {
+        if (typeof t === 'string') return { id: null, name: t, color: '#BE7EC7', emoji: '🏷️' };
+        return {
+            id: t.id || t.tag_id,
+            name: t.name || t.tag_name || "Unknown",
+            color: t.color || "#BE7EC7",
+            emoji: t.emoji || ""
+        };
+    });
+    setTagsList(formattedTags);
   }, [availableTags]);
-
-  // 🟢 [BACKEND NOTE]: เปลี่ยนจากการอ่าน localStorage เป็นการดึงข้อมูลจาก API (หากต้องการให้ Component นี้โหลดข้อมูลเอง)
-  useEffect(() => {
-    const loadLatestTags = async () => {
-        try {
-            // 🟢 [API CALL]: โค้ดตัวอย่างการยิง API เพื่อดึง Tags ล่าสุด
-            // const response = await fetch('/api/tags');
-            // const data = await response.json();
-            // setTagsList(data);
-
-            // หมายเหตุ: โดยปกติหาก Parent Component มีการดึงข้อมูลที่อัปเดตล่าสุด 
-            // และส่งผ่านมาทาง Props `availableTags` อยู่แล้ว Component นี้ก็อาจจะไม่ต้อง Fetch เองซ้ำครับ
-        } catch(e) {
-            console.error("Error loading tags from API:", e);
-        }
-    };
-    
-    // loadLatestTags();
-
-    // 🟢 [BACKEND NOTE]: เดิมทีระบบใช้ window.addEventListener("storage", ...) เพื่อซิงค์ข้อมูลระหว่าง Tab
-    // ในระบบที่มี Backend แนะนำให้เปลี่ยนไปใช้ State Management อย่าง React Query / SWR (มีฟีเจอร์ Refetch on Focus)
-    // หรือถ้าต้องการ Real-time สดๆ ข้ามเครื่อง ให้ใช้ WebSocket (เช่น Socket.io, Pusher) แทนครับ
-  }, []); 
-
 
   return (
     <div 
@@ -63,17 +49,18 @@ export default function AddTag({ onClose, availableTags = [], currentTargets = [
             </div>
         ) : (
             tagsList.map((tag) => {
-              const tagName = typeof tag === 'object' ? tag.name : tag;
-              const tagColor = typeof tag === 'object' ? tag.color : '#BE7EC7';
-              const tagEmoji = typeof tag === 'object' ? tag.emoji : '';
-
               const safeTargets = Array.isArray(currentTargets) ? currentTargets : [];
-              const isActive = safeTargets.includes(tagName);
+              
+              // เช็คว่าถูกเลือกอยู่หรือไม่ (เทียบด้วย Object หรือ String ก็ได้)
+              const isActive = safeTargets.some(t => 
+                 typeof t === 'object' ? t.name === tag.name : t === tag.name
+              );
 
               return (
                 <button
-                  key={tagName}
-                  onClick={() => onToggleTag(tagName)}
+                  key={tag.id || tag.name}
+                  // 🔥 หัวใจสำคัญอยู่ตรงนี้ครับ! ส่งทั้งชื่อ และ ID ไปให้หน้าหลัก
+                  onClick={() => onToggleTag(tag.name, tag.id)} 
                   className={`rounded-xl px-3.5 py-2 text-sm font-medium transition-all flex items-center gap-2 border 
                     ${isActive 
                         ? 'text-white' 
@@ -81,13 +68,13 @@ export default function AddTag({ onClose, availableTags = [], currentTargets = [
                     }
                   `}
                   style={{
-                    backgroundColor: isActive ? tagColor : undefined,
-                    borderColor: isActive ? tagColor : undefined,
-                    boxShadow: isActive ? `0 4px 14px ${tagColor}40` : undefined // เพิ่มเงาเรืองแสงเบาๆ ตามสีของ Tag
+                    backgroundColor: isActive ? tag.color : undefined,
+                    borderColor: isActive ? tag.color : undefined,
+                    boxShadow: isActive ? `0 4px 14px ${tag.color}40` : undefined
                   }}
                 >
-                  {tagEmoji && <span className="text-base leading-none">{tagEmoji}</span>}
-                  <span>{tagName}</span>
+                  {tag.emoji && <span className="text-base leading-none">{tag.emoji}</span>}
+                  <span>{tag.name}</span>
                   {isActive && <Check size={14} strokeWidth={3} />} 
                 </button>
               );

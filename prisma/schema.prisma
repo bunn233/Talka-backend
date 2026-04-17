@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,45 +6,141 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
+
+model AiAgent {
+  id           Int      @id @default(autoincrement())
+  name         String
+  emoji        String
+  greeting     String   @db.Text
+  instructions String   @db.Text
+  tone         String
+  guardrails   String   @db.Text
+  lead_gen     Json?    // เก็บสถานะ Enabled และ Prompt ของ Lead Gen
+  handover     Json?    // เก็บสถานะ Enabled และ Fallback Msg
+  is_published Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+}
+// ------------------------------------------------------
+// WORKSPACE MANAGEMENT (ระบบพื้นที่ทำงานแบบ SaaS)
+// ------------------------------------------------------
+model Workspace {
+  workspace_id  Int               @id @default(autoincrement())
+  name          String            // ชื่อ Workspace เช่น "บริษัท A", "ร้านขายเสื้อผ้า"
+  created_at    DateTime          @default(now())
+
+  members       WorkspaceMember[]
+  channels      Channel[]         // ช่องทางติดต่อทั้งหมดของ Workspace นี้
+  invites       WorkspaceInvite[] // เพิ่มบรรทัดนี้: เก็บคำเชิญที่ถูกส่งจาก Workspace นี้
+}
+
+model WorkspaceMember {
+  workspace_member_id Int      @id @default(autoincrement())
+  
+  workspace_id        Int
+  user_id             Int
+  role                Role     @default(EMPLOYEE) // กำหนดสิทธิ์ใน Workspace ได้
+  joined_at           DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspace_id], references: [workspace_id], onDelete: Cascade)
+  user        User      @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([workspace_id, user_id]) // ป้องกันการแอด User คนเดิมซ้ำเข้า Workspace เดิม
+}
+
+// ตารางใหม่: ระบบเก็บคำเชิญเข้าทีม
+model WorkspaceInvite {
+  invite_id     Int      @id @default(autoincrement())
+  workspace_id  Int
+  inviter_id    Int      // คนที่กดชวน
+  invitee_email String   // อีเมลคนที่ถูกชวน
+  role          String   @default("EMPLOYEE")
+  status        String   @default("PENDING") // สถานะ: PENDING, ACCEPTED, DECLINED
+  created_at    DateTime @default(now())
+
+  workspace     Workspace @relation(fields: [workspace_id], references: [workspace_id], onDelete: Cascade)
+  inviter       User      @relation(fields: [inviter_id], references: [user_id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// USER MANAGEMENT
+// ------------------------------------------------------
+// ------------------------------------------------------
+// USER MANAGEMENT
+// ------------------------------------------------------
 model User {
   user_id       Int        @id @default(autoincrement())
   username      String     
   email         String     @unique
   password      String
-  role          Role       @default(USER)
-  profile_image String? @db.LongText
-  online_status UserStatus @default(OFFLINE)
-  created_at    DateTime   @default(now())
-  is_setup Boolean @default(true)
+  role          Role       @default(EMPLOYEE)
+  profile_image String?    @db.LongText
+  online_status UserStatus @default(ONLINE)
+  current_workspace_id Int?
 
-  teams         TeamMember[]
+  emailVerified     DateTime? // บอกว่ายืนยันตอนไหน (ถ้ามีค่าแปลว่ายืนยันแล้ว)
+  verificationToken String?   // เก็บ OTP 6 หลัก
+  tokenExpiry       DateTime? // เก็บเวลาหมดอายุของ OTP
+  
+  website       String?
+  company       String?
+  country       String?
+  phone         String?
+  company_size  String?
+
+  created_at    DateTime   @default(now())
+  is_setup      Boolean    @default(false)
+
+  workspaces    WorkspaceMember[] 
+  sent_invites  WorkspaceInvite[] 
+  
   assignments   Assignment[]
   notes         Note[]
   activity_logs ActivityLog[]
   chat_sessions ChatSession[] @relation("AssignedAgent")
 }
 
-model Team {
-  team_id     Int          @id @default(autoincrement())
-  team_name   String
-  description String?
+// ------------------------------------------------------
+// OMNICHANNEL SYSTEM (Channels)
+// ------------------------------------------------------
+model Channel {
+  channel_id    Int      @id @default(autoincrement())
+  
+  // ผูก Channel เข้ากับ Workspace
+  workspace_id  Int?     
+  workspace     Workspace? @relation(fields: [workspace_id], references: [workspace_id], onDelete: Cascade)
 
-  members     TeamMember[]
+  name          String   
+  platform_name String   
+
+  // --- Facebook Credentials ---
+  fb_page_id           String?
+  fb_page_access_token String? @db.LongText
+
+  // --- LINE Credentials ---
+  line_channel_id      String?
+  line_channel_secret  String?
+  line_access_token    String? @db.LongText
+
+  // --- Telegram Credentials ---
+  telegram_bot_token   String?
+
+  status      ConnectionStatus @default(CONNECTED)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  chat_sessions  ChatSession[] 
+  social_accounts CustomerSocialAccount[]
 }
 
-model TeamMember {
-  team_member_id Int  @id @default(autoincrement())
-
-  team_id Int
-  user_id Int
-
-  team Team @relation(fields: [team_id], references: [team_id])
-  user User @relation(fields: [user_id], references: [user_id])
-}
-
+// ------------------------------------------------------
+// CUSTOMER MANAGEMENT
+// ------------------------------------------------------
 model Customer {
   customer_id Int      @id @default(autoincrement())
   name        String
+  image       String?  @db.LongText 
   email       String?
   phone       String?
   company     String?
@@ -61,48 +152,47 @@ model Customer {
   tags            CustomerTag[]
 }
 
-model Platform {
-  platform_id   Int      @id @default(autoincrement())
-  platform_name String
-
-  chat_sessions ChatSession[]
-  social_links  CustomerSocialAccount[]
-}
-
 model CustomerSocialAccount {
   social_account_id Int @id @default(autoincrement())
 
   customer_id Int
-  platform_id Int
+  channel_id  Int 
 
-  account_identifier String
+  account_identifier String 
 
   customer Customer @relation(fields: [customer_id], references: [customer_id])
-  platform Platform @relation(fields: [platform_id], references: [platform_id])
+  channel  Channel  @relation(fields: [channel_id], references: [channel_id])
 }
 
+// ------------------------------------------------------
+// CHAT & MESSAGING
+// ------------------------------------------------------
 model ChatSession {
   chat_session_id Int      @id @default(autoincrement())
 
   customer_id Int
-  platform_id Int
+  channel_id  Int
 
   assigned_user_id Int?
+
+  // ระบบ Board Kanban
+  board_column_id String?      @default("col-1")
+  board_column    BoardColumn? @relation(fields: [board_column_id], references: [column_id])
 
   status     ChatStatus @default(OPEN)
   start_time DateTime   @default(now())
   end_time   DateTime?
 
   customer Customer @relation(fields: [customer_id], references: [customer_id])
-  platform Platform @relation(fields: [platform_id], references: [platform_id])
+  channel  Channel  @relation(fields: [channel_id], references: [channel_id]) // 🔥 โยงหา Channel โดยตรง
 
   assigned_user User? @relation("AssignedAgent", fields: [assigned_user_id], references: [user_id])
 
-  messages   Message[]
-  notes      Note[]
+  messages    Message[]
+  notes       Note[]
   assignments Assignment[]
-  tags       ChatTag[]
-  logs       ActivityLog[]
+  tags        ChatTag[]
+  logs        ActivityLog[]
 }
 
 model Message {
@@ -114,8 +204,10 @@ model Message {
   sender_id   Int?
 
   message_type MessageType
-  content      String?
+  content      String?     @db.LongText 
 
+  external_id  String?     @unique 
+  is_read      Boolean     @default(false)
   attachment_url String?
 
   created_at DateTime @default(now())
@@ -124,16 +216,26 @@ model Message {
   chat_session ChatSession @relation(fields: [chat_session_id], references: [chat_session_id])
 }
 
+// ------------------------------------------------------
+// UTILITIES (Board, Notes, Assignments, Tags, Logs)
+// ------------------------------------------------------
+model BoardColumn {
+  column_id   String   @id 
+  title       String
+  order_index Int      @default(0) 
+  created_at  DateTime @default(now())
+
+  chat_sessions ChatSession[] 
+}
+
 model Note {
   note_id Int @id @default(autoincrement())
-
   chat_session_id Int
   user_id         Int
-
   title   String?
-  content String
-
+  content String  @db.LongText
   created_at DateTime @default(now())
+  is_deleted      Boolean  @default(false)
 
   chat_session ChatSession @relation(fields: [chat_session_id], references: [chat_session_id])
   user         User        @relation(fields: [user_id], references: [user_id])
@@ -146,7 +248,7 @@ model Assignment {
   user_id         Int
 
   topic    String?
-  detail   String?
+  detail   String?  @db.Text 
   deadline DateTime?
   status   AssignmentStatus @default(PENDING)
 
@@ -155,9 +257,8 @@ model Assignment {
 }
 
 model Tag {
-  tag_id Int @id @default(autoincrement())
-
-  tag_name    String
+  tag_id      Int @id @default(autoincrement())
+  tag_name    String  @unique
   color       String?
   description String?
 
@@ -188,7 +289,7 @@ model ChatTag {
 model ActivityLog {
   log_id Int @id @default(autoincrement())
 
-  user_id Int?
+  user_id         Int?
   chat_session_id Int?
 
   type String @default("system") // message | system | event
@@ -203,18 +304,22 @@ model ActivityLog {
 
   created_at DateTime @default(now())
 
-  user User? @relation(fields: [user_id], references: [user_id])
+  user User?        @relation(fields: [user_id], references: [user_id])
   chat ChatSession? @relation(fields: [chat_session_id], references: [chat_session_id])
 
   @@index([chat_session_id, type, created_at])
   @@index([user_id])
 }
 
+// ------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------
 enum Role {
   USER
   ADMIN
   EMPLOYEE
   MANAGER
+  Owner 
 }
 
 enum UserStatus {
@@ -239,6 +344,7 @@ enum MessageType {
 }
 
 enum ChatStatus {
+  NEW
   OPEN
   PENDING
   CLOSED
@@ -249,4 +355,10 @@ enum AssignmentStatus {
   PENDING
   IN_PROGRESS
   DONE
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
 }

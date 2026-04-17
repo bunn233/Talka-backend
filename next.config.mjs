@@ -10,6 +10,11 @@ const nextConfig = {
       },
     ],
   },
+ 
+  allowedDevOrigins: [
+    'stanniferous-carolynn-pronegotiation.ngrok-free.dev',
+    'localhost:3000'
+  ]
 };
 
 export default nextConfig;

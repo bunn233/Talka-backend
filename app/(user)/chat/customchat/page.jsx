@@ -1,131 +1,327 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Pusher from "pusher-js"; // 🔥 นำเข้า Pusher
 import "@/app/assets/css/other.css";
 
-//Import Data
-// 🟢 [BACKEND NOTE]: ลบข้อมูลจำลองนี้ออกเมื่อต่อ API จริง
-import initialChatData from "@/app/data/mockData.js";
-
-// Helper Data Processing
-const processInitialData = (data) => {
-  if (!data) return [];
-  return data.map((chat, index) => ({
-    ...chat,
-    lastMessage: chat.message,
-    platform: chat.platform || (index % 2 === 0 ? "line" : "facebook"),
-    columnId: chat.columnId || "col-1",
-    messages: chat.messages || []
-  }));
-};
-
 export default function ChatBoardInlineFinal() {
-  // State 
-  // 🟢 [BACKEND NOTE]: เปลี่ยนค่าเริ่มต้นเป็น [] (อาเรย์ว่าง) เพื่อรอข้อมูลจาก API
   const [chats, setChats] = useState([]);
-  const [columns, setColumns] = useState([
-    { id: "col-1", title: "Inbox" },
-  ]);
-
-  // 🟢 [BACKEND NOTE]: ให้เริ่มต้นเป็น false พอ fetch ข้อมูลเสร็จค่อยเปลี่ยนเป็น true
+  const [columns, setColumns] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  
   const [selectedChatIds, setSelectedChatIds] = useState([]);
-  const [activeDropdownChatId, setActiveDropdownChatId] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [messageDrafts, setMessageDrafts] = useState({});
-  const [showAiModelSelectId, setShowAiModelSelectId] = useState(null);
+
   const [editingColId, setEditingColId] = useState(null);
   const [tempColTitle, setTempColTitle] = useState("");
+
+  const [messageDrafts, setMessageDrafts] = useState({});
   const [isSelectChatModalOpen, setIsSelectChatModalOpen] = useState(false);
   const [targetColumnIdForAdd, setTargetColumnIdForAdd] = useState(null);
   const [chatFilter, setChatFilter] = useState("ALL");
   const [isAddColumnMode, setIsAddColumnMode] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState("");
+  
+  const [currentUser, setCurrentUser] = useState({ name: "Agent", role: "Admin", avatar: "A" });
+  const [activeWsId, setActiveWsId] = useState(null);
 
-  // จำลองฐานข้อมูลหลัก (ทดแทน LocalStorage เพื่อให้กดเพิ่มแชทลง Board ได้)
-  // 🟢 [BACKEND NOTE]: ลบตัวแปรนี้ออกเมื่อต่อ API จริง
-  const mockDatabaseChats = processInitialData(initialChatData);
+  const selectedChatIdsRef = useRef(selectedChatIds);
+  useEffect(() => {
+    selectedChatIdsRef.current = selectedChatIds;
+  }, [selectedChatIds]);
+  const chatContainerRefs = useRef({});
 
   useEffect(() => {
-    // 🟢 [BACKEND NOTE]: ตรงนี้ให้เรียกฟังก์ชัน Fetch API เช่น GET /api/board
+    selectedChatIds.forEach((id) => {
+      const container = chatContainerRefs.current[id];
+      if (container)
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    });
+  }, [chats, selectedChatIds]);
+
+  // 🟢 1. ฟังก์ชันโหลดข้อมูลคอลัมน์
+  const loadColumns = async (wsId) => {
+    try {
+      const timestamp = new Date().getTime();
+      const colRes = await fetch(`/api/board/columns?wsId=${wsId}&t=${timestamp}`, { cache: "no-store" });
+      const colData = await colRes.json();
+      setColumns(colData || []);
+    } catch (error) {
+      console.error("Error loading columns:", error);
+    }
+  };
+
+  // 🟢 2. โหลดข้อมูลทั้งหมดครั้งแรก
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // 🔥 ดึง Workspace ID
+        const wsRes = await fetch("/api/users/current-workspace");
+        if (!wsRes.ok) throw new Error("Failed to get workspace");
+        const wsData = await wsRes.json();
+        const currentWsId = wsData.activeWorkspaceId;
+        
+        if (!currentWsId) {
+            setIsLoaded(true);
+            return;
+        }
+        setActiveWsId(currentWsId);
+
+        // 🔥 ดึงโปรไฟล์ User
+        try {
+            const profileRes = await fetch('/api/users/profile');
+            if (profileRes.ok) {
+              const profileData = await profileRes.json();
+              if (profileData.profile) {
+                setCurrentUser({
+                  id: profileData.profile.user_id,
+                  name: profileData.profile.username || "Agent",
+                  role: profileData.profile.role,
+                  avatar: profileData.profile.profile_image || "A",
+                });
+              }
+            }
+        } catch (e) { console.error("Fetch profile error", e); }
+
+        const timestamp = new Date().getTime();
+        await loadColumns(currentWsId);
+
+        // 🔥 ดึงแชท
+        const chatRes = await fetch(`/api/chats/chat-sessions?wsId=${currentWsId}&t=${timestamp}`, { cache: "no-store" });
+        if (!chatRes.ok) throw new Error("Failed to fetch chats");
+        const data = await chatRes.json();
+
+        const realChats = (Array.isArray(data) ? data : []).map((chat) => ({
+          ...chat,
+          columnId: chat.board_column_id || chat.boardColumnId || chat.columnId || "col-1",
+          avatar: chat.name ? chat.name.charAt(0).toUpperCase() : "U",
+        }));
+
+        setChats(realChats);
+      } catch (error) {
+        console.error("Error loading board data:", error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
     loadData();
-    
-    // จำลองการดึง User (ในของจริงดึงจาก Session/Token)
-    setCurrentUser({ username: "Admin", role: "Owner" });
   }, []);
 
-  const loadData = () => {
-    // 🟢 [BACKEND NOTE]: จุดนี้คือการ Set ข้อมูลจาก API ใส่ State (ตอนนี้ใช้ Mock ไปก่อน)
-    setChats(mockDatabaseChats.map(c => ({ ...c, columnId: "col-1" }))); // สมมติให้อยู่ col-1 หมด
-    setColumns([
-      { id: "col-1", title: "Inbox" },
-      { id: "col-2", title: "In Progress" }
-    ]);
-    setIsLoaded(true);
-  };
-
-  //Logic Functions
-
-  const handleInputChange = (chatId, value) => {
-    setMessageDrafts(prev => ({ ...prev, [chatId]: value }));
-  };
-
-  const handleSendMessage = async (chatId) => {
-    const text = messageDrafts[chatId]?.trim();
-    if (!text) return;
-    const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // 🟢 [BACKEND NOTE]: ใส่คำสั่ง POST ข้อความไปที่เซิร์ฟเวอร์
-    // await fetch(`/api/chat/${chatId}/message`, { method: 'POST', body: JSON.stringify({ text }) });
-
-    const updatedChats = chats.map(chat => {
-      if (chat.id === chatId) {
-        const updatedMessages = [...(chat.messages || []), { text, from: "me", time: currentTime }];
-        return { ...chat, messages: updatedMessages, lastMessage: text, time: currentTime };
+  const reloadChats = async () => {
+      if (!activeWsId) return;
+      try {
+          const chatRes = await fetch(`/api/chats/chat-sessions?wsId=${activeWsId}&t=${Date.now()}`, { cache: 'no-store' });
+          if (chatRes.ok) {
+              const chatData = await chatRes.json();
+              const realChats = (Array.isArray(chatData) ? chatData : []).map((chat) => ({
+                  ...chat,
+                  columnId: chat.board_column_id || chat.boardColumnId || chat.columnId || "col-1",
+                  avatar: chat.name ? chat.name.charAt(0).toUpperCase() : "U",
+              }));
+              setChats(realChats);
+          }
+      } catch (error) {
+          console.error("❌ Failed to reload chats:", error);
       }
-      return chat;
-    });
-    setChats(updatedChats);
-    setMessageDrafts(prev => ({ ...prev, [chatId]: "" }));
   };
 
-  const handleAddColumn = async () => {
-    if (!newColumnTitle.trim()) return;
-    if (columns.length >= 3) return;
-    
-    // 🟢 [BACKEND NOTE]: ใส่คำสั่ง POST สร้าง Column ใหม่ที่เซิร์ฟเวอร์
-    // const res = await fetch('/api/board/columns', { method: 'POST', ... });
-    // const newCol = await res.json();
-    
-    const newColId = `col-${Date.now()}`;
-    setColumns([...columns, { id: newColId, title: newColumnTitle }]);
-    setNewColumnTitle("");
-    setIsAddColumnMode(false);
-  };
+  // 🟢 3. ระบบ Real-time (เปลี่ยนจาก SSE เป็น Pusher)
+  useEffect(() => {
+      if (!isLoaded || !activeWsId) return;
 
-  const handleDeleteColumn = async (colId, e) => {
-    e.stopPropagation();
-    // 🟢 [BACKEND NOTE]: ใส่คำสั่ง DELETE Column ที่เซิร์ฟเวอร์
-    // await fetch(`/api/board/columns/${colId}`, { method: 'DELETE' });
+      Pusher.logToConsole = false;
+      const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+      });
 
-    setColumns(columns.filter((c) => c.id !== colId));
-    setChats((prev) => prev.map((chat) => chat.columnId === colId ? { ...chat, columnId: "col-1" } : chat));
-  };
+      // 🎧 ฟังชันแชท
+      const channel = pusher.subscribe(`workspace-${activeWsId}`);
+      
+      channel.bind('channel-updated', () => reloadChats());
+      channel.bind('chat-details-updated', () => reloadChats());
+
+      channel.bind('webhook-event', function(data) {
+        if (!data || !data.chatId) return;
+
+        if (data.action === "SYNC_MESSAGE") {
+          setChats(prev => {
+            const isExistingChat = prev.some((c) => String(c.id) === String(data.chatId));
+            const isViewing = selectedChatIdsRef.current.includes(data.chatId);
+
+            if (isExistingChat) {
+              return prev.map(chat => {
+                if (String(chat.id) === String(data.chatId)) {
+                  let updatedMessages = [...(chat.messages || [])];
+                  const tempMsgIndex = updatedMessages.findIndex(m => 
+                      (m.text === data.text && Math.abs(new Date(m.timestamp) - new Date(data.timestamp)) < 5000)
+                  );
+
+                  const newMsg = {
+                      id: Date.now() + Math.random(),
+                      external_id: data.messageId,
+                      from: data.from || "customer",
+                      senderName: data.senderName,
+                      text: data.text,
+                      type: data.type,
+                      time: data.time || new Date(data.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+                      timestamp: new Date(data.timestamp),
+                  };
+
+                  if (tempMsgIndex !== -1) updatedMessages[tempMsgIndex] = newMsg;
+                  else updatedMessages.push(newMsg);
+
+                  return {
+                    ...chat,
+                    messages: updatedMessages,
+                    lastMessage: data.type === "IMAGE" ? "ส่งรูปภาพ" : data.text,
+                    unreadCount: data.from?.toLowerCase() === "customer" && !isViewing ? (chat.unreadCount || 0) + 1 : chat.unreadCount
+                  };
+                }
+                return chat;
+              });
+            } else {
+              setTimeout(() => { reloadChats(); }, 500);
+              return prev;
+            }
+          });
+        }
+
+        if (data.action === "MOVE_CHAT") {
+           setChats(prev => prev.map(chat => 
+              String(chat.id) === String(data.chatId) ? { ...chat, columnId: data.columnId } : chat
+           ));
+        }
+
+        if (data.action === "MARK_READ") {
+           setChats(prev => prev.map(chat => 
+              String(chat.id) === String(data.chatId) ? { ...chat, unreadCount: 0 } : chat
+           ));
+        }
+
+        if (data.action === "DELETE_MESSAGE" || data.action === "EDIT_MESSAGE") {
+          setChats((prev) =>
+            prev.map((chat) => {
+              if (String(chat.id) === String(data.chatId)) {
+                const updatedMessages = chat.messages.map((m) => {
+                  const isMatch = String(m.external_id) === String(data.messageId) || String(m.id) === String(data.messageId);
+                  return isMatch ? { ...m, text: data.text } : m;
+                });
+                return { ...chat, messages: updatedMessages, lastMessage: data.text };
+              }
+              return chat;
+            }),
+          );
+        }
+      });
+
+      // 🎧 ฟังสัญญาณบอร์ด
+      const globalBoardChannel = pusher.subscribe('global-board');
+      globalBoardChannel.bind('board-layout-updated', function(data) {
+          loadColumns(activeWsId);
+      });
+
+      return () => {
+          pusher.unsubscribe(`workspace-${activeWsId}`);
+          globalBoardChannel.unbind_all();
+          pusher.unsubscribe('global-board');
+      };
+  }, [isLoaded, activeWsId]);
 
   const startEditColumn = (col) => {
-    setEditingColId(col.id);
+    setEditingColId(col.column_id);
     setTempColTitle(col.title);
   };
 
   const saveColumnTitle = async () => {
     if (tempColTitle.trim()) {
-      // 🟢 [BACKEND NOTE]: ใส่คำสั่ง PATCH แก้ไขชื่อ Column ที่เซิร์ฟเวอร์
-      // await fetch(`/api/board/columns/${editingColId}`, { method: 'PATCH', ... });
-
-      setColumns((prev) => prev.map((c) => c.id === editingColId ? { ...c, title: tempColTitle } : c));
+      setColumns((prev) =>
+        prev.map((c) => c.column_id === editingColId ? { ...c, title: tempColTitle } : c)
+      );
+      try {
+        await fetch(`/api/board/columns/${editingColId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: tempColTitle })
+        });
+      } catch (error) {
+        console.error("Failed to update column title", error);
+      }
     }
     setEditingColId(null);
+  };
+
+  const handleSendMessage = async (chatId) => {
+    const text = messageDrafts[chatId]?.trim();
+    if (!text || !activeWsId) return;
+    const currentTime = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+              messages: [...(chat.messages || []), { text, from: "AGENT", senderName: currentUser.name, time: currentTime, id: Date.now(), timestamp: new Date() }],
+              lastMessage: text,
+            }
+          : chat
+      )
+    );
+    setMessageDrafts((prev) => ({ ...prev, [chatId]: "" }));
+    
+    try {
+      await fetch("/api/messages/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatSessionId: chatId, text, workspaceId: activeWsId }),
+      });
+    } catch (error) {
+        console.error(error);
+    }
+  };
+
+  const handleAddColumn = async () => {
+    if (!newColumnTitle.trim() || columns.length >= 5) return;
+    const newColId = `col-${Date.now()}`;
+    const newColData = { id: newColId, title: newColumnTitle, order_index: columns.length + 1 };
+
+    const oldColumns = [...columns];
+    setColumns([...columns, { column_id: newColId, title: newColumnTitle }]);
+    setNewColumnTitle("");
+    setIsAddColumnMode(false);
+
+    try {
+      const res = await fetch("/api/board/columns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newColData),
+      });
+
+      if (!res.ok) throw new Error("API เกิดข้อผิดพลาด");
+    } catch (error) {
+      alert(`❌ สร้างคอลัมน์ไม่สำเร็จ:\n${error.message}`);
+      setColumns(oldColumns);
+    }
+  };
+
+  const handleDeleteColumn = async (colId, e) => {
+    e.stopPropagation();
+    if (colId === "col-1") {
+      alert("ไม่สามารถลบคอลัมน์ Inbox หลักได้ครับ!");
+      return;
+    }
+
+    const oldCols = [...columns];
+    const oldChats = [...chats];
+
+    setColumns(columns.filter((c) => c.column_id !== colId));
+    setChats((prev) => prev.map((chat) => chat.columnId === colId ? { ...chat, columnId: "col-1" } : chat));
+
+    try {
+      const res = await fetch(`/api/board/columns/${colId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("API เกิดข้อผิดพลาด ไม่สามารถลบได้");
+    } catch (error) {
+      alert(`❌ ลบคอลัมน์ไม่สำเร็จ:\n${error.message}`);
+      setColumns(oldCols);
+      setChats(oldChats);
+    }
   };
 
   const openAddChatModal = (columnId) => {
@@ -134,260 +330,319 @@ export default function ChatBoardInlineFinal() {
     setIsSelectChatModalOpen(true);
   };
 
-  const handleAddChatToColumn = async (chatId) => {
-    // 🟢 [BACKEND NOTE]: ตรงนี้ต้องเรียก API เพื่ออัปเดต columnId ของ Chat นั้นใน Database
-    // await fetch(`/api/board/chats/${chatId}/move`, { method: 'PATCH', body: JSON.stringify({ columnId: targetColumnIdForAdd }) });
-
-    const existingInBoard = chats.find(c => c.id === chatId);
-    const freshChat = mockDatabaseChats.find(c => c.id === chatId); // ในของจริงดึงจาก All Chats API
-
-    if (existingInBoard) {
-      setChats((prev) => prev.map((chat) =>
-        chat.id === chatId ? { ...chat, columnId: targetColumnIdForAdd } : chat
-      ));
-    } else if (freshChat) {
-      const newBoardChat = { ...freshChat, columnId: targetColumnIdForAdd, messages: freshChat.messages || [] };
-      setChats(prev => [...prev, newBoardChat]);
-    }
+  const handleMoveChatToColumn = async (chatId) => {
+    const oldChats = [...chats];
+    
+    setChats((prev) => prev.map((chat) => chat.id === chatId ? { ...chat, columnId: targetColumnIdForAdd } : chat));
     setIsSelectChatModalOpen(false);
+
+    try {
+      const res = await fetch(`/api/chats/${chatId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ columnId: targetColumnIdForAdd }),
+      });
+
+      if (!res.ok) throw new Error("บันทึกลง Database ไม่สำเร็จ");
+    } catch (error) {
+      alert(`❌ ย้ายแชทไม่สำเร็จ ระบบจะดึงกลับไปตำแหน่งเดิม:\n${error.message}`);
+      setChats(oldChats);
+    }
   };
 
-  const getFilteredChats = () => {
-    // 🟢 [BACKEND NOTE]: ในของจริง ข้อมูลส่วนนี้อาจจะดึงมาจาก API (GET /api/chats) แยกต่างหากเพื่อแสดงรายชื่อทั้งหมด
-    let available = mockDatabaseChats;
-    if (chatFilter === "LINE") return available.filter((c) => (c.platform || c.channel) === "Line" || c.platform === "line");
-    if (chatFilter === "FACEBOOK") return available.filter((c) => (c.platform || c.channel) === "Facebook" || c.platform === "facebook");
-    return available;
+  const getFilteredChatsForModal = () => {
+    if (chatFilter === "ALL") return chats;
+    return chats.filter((c) => c.platform === chatFilter);
   };
 
-  const handleToggleChat = (chatId) => {
-    setSelectedChatIds((prev) => prev.includes(chatId) ? prev.filter((id) => id !== chatId) : [...prev, chatId]);
-    setActiveDropdownChatId(null);
-    setShowAiModelSelectId(null);
+  const handleToggleChat = async (chatId) => {
+    setSelectedChatIds((prev) =>
+      prev.includes(chatId) ? prev.filter((id) => id !== chatId) : [...prev, chatId]
+    );
+
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)));
+    try {
+      await fetch(`/api/chats/${chatId}/read`, { method: "PATCH" });
+    } catch (err) {
+      console.error("Failed to mark as read", err);
+    }
   };
 
-  const toggleAiDropdown = (e, chatId) => {
-    e.stopPropagation();
-    setShowAiModelSelectId((prev) => (prev === chatId ? null : chatId));
+  const handleInputChange = (chatId, value) => {
+    setMessageDrafts((prev) => ({ ...prev, [chatId]: value }));
   };
 
-  if (!isLoaded) return <div className="bg-slate-900 h-screen w-full flex items-center justify-center text-white/50">Loading...</div>;
+  const getStatusColorClass = (status) => {
+    switch (status?.toUpperCase()) {
+      case "OPEN": return "bg-green-500/10 text-green-500 border-green-500/20";
+      case "PENDING": return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
+      case "CLOSED":
+      case "RESOLVED": return "bg-red-500/10 text-red-500 border-red-500/20";
+      default: return "bg-white/5 text-white/50 border-white/10";
+    }
+  };
 
+  if (!isLoaded)
+    return (
+      <div className="h-screen w-full flex items-center justify-center text-white/50">
+        <div className="w-8 h-8 border-4 border-[#BE7EC7]/30 border-t-[#BE7EC7] rounded-full animate-spin"></div>
+      </div>
+    );
 
   return (
-    <div className="relative w-full h-screen overflow-hidden p-4 font-sans text-white" onClick={() => { setActiveDropdownChatId(null); setShowAiModelSelectId(null); }}>
-      <div className="absolute inset-0 bg-linear-to-br from-slate-900 to-slate-800 -z-10" />
+    <div className="relative w-full h-screen overflow-hidden p-4 font-sans text-white">
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800 -z-10" />
 
       <div className="flex h-full gap-4 overflow-x-auto pb-2 items-start no-scrollbar">
         {columns.map((col) => (
-          <div key={col.id} className="bg-[rgba(43,50,63,0.2)] border border-[rgba(253,254,253,0.1)] backdrop-blur-md rounded-3xl shadow-xl pt-4 px-3 pb-3 h-full flex flex-col min-w-[85vw] md:min-w-[40vw] lg:min-w-[24vw] shrink-0 transition-all">
+          <div
+            key={col.column_id}
+            className="bg-[#1a1423] border border-[#BE7EC7]/10 backdrop-blur-md rounded-3xl shadow-xl pt-4 px-3 pb-3 h-full flex flex-col w-[90vw] md:w-[350px] lg:w-[380px] shrink-0 flex-none transition-all"
+          >
             <div className="flex justify-between items-center mb-4 px-2 shrink-0 h-8">
-              {editingColId === col.id ? (
-                <input autoFocus value={tempColTitle} onChange={(e) => setTempColTitle(e.target.value)} onBlur={saveColumnTitle} onKeyDown={(e) => e.key === "Enter" && saveColumnTitle()} className="bg-black/20 border border-white/20 rounded px-2 py-1 text-lg font-bold text-white w-full mr-2 outline-none" />
+              {editingColId === col.column_id ? (
+                <input
+                  autoFocus
+                  value={tempColTitle}
+                  onChange={(e) => setTempColTitle(e.target.value)}
+                  onBlur={saveColumnTitle}
+                  onKeyDown={(e) => e.key === "Enter" && saveColumnTitle()}
+                  className="bg-black/40 border border-[#BE7EC7]/50 rounded px-2 py-1 text-sm font-bold text-white w-full mr-2 outline-none"
+                />
               ) : (
-                <h2 onClick={() => startEditColumn(col)} className="font-bold text-lg text-white/90 cursor-pointer hover:text-white hover:bg-white/5 px-2 py-1 rounded transition-colors truncate flex-1">{col.title}</h2>
+                <h2
+                  onClick={() => startEditColumn(col)}
+                  className="font-bold text-lg text-white/90 cursor-pointer hover:text-white hover:bg-white/5 px-2 py-1 rounded transition-colors truncate flex-1"
+                >
+                  {col.title}
+                </h2>
               )}
-              <button onClick={(e) => handleDeleteColumn(col.id, e)} className="text-white/40 hover:text-red-400 ml-2">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              <button
+                onClick={(e) => handleDeleteColumn(col.column_id, e)}
+                className="text-white/40 hover:text-red-400 ml-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pr-1 min-h-0">
-              {chats.filter((c) => c.columnId === col.id).map((chat) => {
-                const isOpen = selectedChatIds.includes(chat.id);
-                return (
-                  <motion.div key={chat.id} className={`border transition-colors duration-300 overflow-hidden rounded-2xl relative flex flex-col ${isOpen ? "bg-slate-800/10 border-white/20 shadow-xl ring-1 ring-white/10" : "bg-white/30 hover:bg-white/10 border-white/10 cursor-pointer"}`}>
+              {chats.filter((c) => c.columnId === col.column_id).map((chat) => {
+                  const isOpen = selectedChatIds.includes(chat.id);
+                  const isIG = chat.platform === "INSTAGRAM";
+                  const isFB = chat.platform === "FACEBOOK";
+                  const isLINE = chat.platform === "LINE";
+                  const isTG = chat.platform === "TELEGRAM";
+                  const isUnread = chat.unreadCount > 0 && !isOpen;
+                  
+                  const lastMsgObj = chat.messages?.[chat.messages.length - 1];
+                  const isMe = lastMsgObj ? ["me", "admin", "agent"].includes(lastMsgObj.from?.toLowerCase()) : false;
 
-                    {!isOpen && (
-                      <div onClick={() => handleToggleChat(chat.id)} className="p-3 flex justify-between items-start cursor-pointer select-none shrink-0 relative group">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="relative">
-                            <div className="w-10 h-10 bg-linear-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-xl shadow-lg shrink-0">{chat.avatar}</div>
-                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-800 ${chat.platform === "line" || chat.channel === "Line" ? "bg-[#06c755]" : "bg-[#1877f2]"}`}>
-                              {chat.platform === "line" || chat.channel === "Line" ? (<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="white" viewBox="0 0 16 16"><path d="M8 0c4.418 0 8 3.582 8 8s-3.582 8-8 8-8-3.582-8-8 3.582-8 8-8zM8 2C4.686 2 2 4.686 2 8c0 1.818.813 3.444 2.098 4.604-.15.557-.536 1.623-1.146 2.237.798-.052 1.979-.29 2.778-.998a5.96 5.96 0 0 0 2.27.457c3.314 0 6-2.686 6-6S11.314 2 8 2z" /></svg>) : (<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="white" viewBox="0 0 16 16"><path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951z" /></svg>)}
+                  let previewText = chat.lastMessage || "Click to chat";
+                  const isImagePreview = chat.lastMessageType === "IMAGE" || previewText === "IMAGE" || previewText.includes("/api/line/image/") || previewText.includes("/api/telegram/file/") || previewText.includes("lookaside.fbsbx.com") || previewText.includes("ig_messaging_cdn") || previewText.includes("fbcdn.net") || previewText.includes("cdninstagram.com");
+
+                  if (isImagePreview) {
+                    previewText = isMe ? "คุณส่งรูปภาพ" : `${chat.name.split(" ")[0]} ส่งรูปภาพ `;
+                  } else if (isMe && previewText !== "Click to chat") {
+                    previewText = previewText.startsWith("คุณ:") ? previewText : `คุณ: ${previewText}`;
+                  }
+
+                  return (
+                    <motion.div
+                      key={chat.id}
+                      className={`transition-colors duration-300 overflow-hidden rounded-2xl relative flex flex-col ${isOpen ? "bg-white/5 border border-white/20 shadow-xl" : "bg-white/20 hover:bg-white/30 border border-white/10 cursor-pointer"}`}
+                    >
+                      {/* --- ตอนที่หดการ์ดอยู่ (!isOpen) --- */}
+                      {!isOpen && (
+                        <div onClick={() => handleToggleChat(chat.id)} className="p-3 flex justify-between items-start cursor-pointer select-none">
+                          <div className="flex items-start gap-3 overflow-hidden w-full">
+                            <div className="relative shrink-0">
+                              <img src={chat.imgUrl || "/avatar.png"} className="w-10 h-10 rounded-full object-cover shadow-lg bg-white/5" />
+                              <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#1a1423] ${isIG ? "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-500" : isFB ? "bg-[#0866FF]" : isLINE ? "bg-[#06C755]" : isTG ? "bg-[#0088cc]" : "bg-slate-500"}`}>
+                                <i className={`fa-brands fa-${isIG ? "instagram" : isFB ? "facebook-f" : isLINE ? "line" : isTG ? "telegram" : "question"} text-[9px] text-white`}></i>
+                              </div>
                             </div>
-                          </div>
-                          <div className="min-w-0 flex flex-col gap-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <h3 className="font-semibold truncate text-white/90 text-sm">{chat.name}</h3>
+                            <div className="min-w-0 flex-1">
+                              <h3 className={`truncate text-sm ${isUnread ? "font-bold text-white" : "font-semibold text-white/90"}`}>{chat.name}</h3>
+                              <p className={`text-xs truncate mb-1.5 ${isUnread ? "font-bold text-[#BE7EC7]" : "text-white/50"}`}>{isUnread ? `${chat.unreadCount} ข้อความใหม่` : previewText}</p>
+                              
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className={`text-[8px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${getStatusColorClass(chat.status)}`}>
+                                  {chat.status || "OPEN"}
+                                </span>
+                                {(chat.tags || []).map((tagObj, i) => {
+                                  const tagName = typeof tagObj === 'object' ? tagObj.name : tagObj;
+                                  if (!tagName) return null;
+                                  const tagColor = typeof tagObj === 'object' ? tagObj.color : '#BE7EC7';
+                                  const tagEmoji = typeof tagObj === 'object' ? tagObj.emoji : '';
+                                  return (
+                                    <span
+                                      key={`${tagName}-${i}`}
+                                      className="text-[8px] font-semibold px-1.5 py-0.5 rounded-md border flex items-center gap-1 whitespace-nowrap"
+                                      style={{ color: tagColor, borderColor: `${tagColor}40`, backgroundColor: `${tagColor}10` }}
+                                    >
+                                      {tagEmoji && <span>{tagEmoji}</span>}
+                                      {tagName}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <p className="text-xs text-white/50 truncate">{chat.lastMessage || chat.message || "Click to chat"}</p>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1"><span className="text-[9px] text-white/30 mt-1">{chat.time}</span></div>
-                      </div>
-                    )}
-
-                    <AnimatePresence>
-                      {isOpen && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 420, opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }} className="flex flex-col h-full">
-                          <div className="flex items-center justify-between border-b border-white/10 p-3 bg-black/10 shrink-0 relative" onClick={() => handleToggleChat(chat.id)}>
-                            <div className="flex items-center gap-3 cursor-pointer">
-                              <div className="relative">
-                                <div className="w-10 h-10 bg-linear-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-xl shadow-lg shrink-0">{chat.avatar}</div>
-                                <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-800 ${chat.platform === "line" || chat.channel === "Line" ? "bg-[#06c755]" : "bg-[#1877f2]"}`}>
-                                  {chat.platform === "line" || chat.channel === "Line" ? (<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="white" viewBox="0 0 16 16"><path d="M8 0c4.418 0 8 3.582 8 8s-3.582 8-8 8-8-3.582-8-8 3.582-8 8-8zM8 2C4.686 2 2 4.686 2 8c0 1.818.813 3.444 2.098 4.604-.15.557-.536 1.623-1.146 2.237.798-.052 1.979-.29 2.778-.998a5.96 5.96 0 0 0 2.27.457c3.314 0 6-2.686 6-6S11.314 2 8 2z" /></svg>) : (<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="white" viewBox="0 0 16 16"><path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951z" /></svg>)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h2 className="text-white font-semibold text-sm">{chat.name}</h2>
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5"><span className="border border-white/20 bg-white/10 text-white/90 text-[9px] px-2 py-0.5 rounded-full">{chat.status || "Open"}</span></div>
-                              </div>
-                            </div>
-                            <div className="relative">
-                              <button onClick={(e) => toggleAiDropdown(e, chat.id)} className={`flex items-center gap-2 border border-white/20 rounded-lg px-3 py-1.5 transition-colors ${showAiModelSelectId === chat.id ? "bg-white/20" : "bg-white/5 hover:bg-white/10"}`}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80">
-                                  <rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4" /><line x1="8" y1="16" x2="8" y2="16" /><line x1="16" y1="16" x2="16" y2="16" />
-                                </svg>
-                                <span className="text-white text-xs font-medium hidden sm:inline">Select AI</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-white/50 transition-transform ${showAiModelSelectId === chat.id ? "rotate-180" : ""}`}>
-                                  <path d="m6 9 6 6 6-6" />
-                                </svg>
-                              </button>
-                              {showAiModelSelectId === chat.id && (
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                                  <div className="px-4 py-2 text-[10px] font-bold text-white/40 tracking-wider uppercase border-b border-white/5">Available Models</div>
-                                  <div className="py-1">
-                                    {['Receptionist', 'Sales Agent', 'Support Agent'].map((m, i) => {
-                                      const emojis = ['🛎️', '😆', '❤️'];
-                                      return (
-                                        <button key={m} className="w-full text-left px-4 py-2.5 hover:bg-white/5 flex items-center gap-3 transition-colors group">
-                                          <div className="text-xl group-hover:scale-110 transition-transform">{emojis[i]}</div>
-                                          <div className="text-white text-sm font-medium">{m}</div>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-4 bg-transparent">
-                            {chat.messages && chat.messages.map((msg, index) => {
-                              const isMe = msg.from === "me";
-                              return (
-                                <div key={index} className={`flex flex-col ${isMe ? "items-end" : "items-start"} mb-2`}>
-                                  <div className={`flex items-center gap-2 mb-1 text-[10px] text-white/50 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                    <span className="font-semibold">{isMe ? (currentUser?.username || "Me") : chat.name}</span>
-                                    {msg.time && <span>{msg.time}</span>}
-                                  </div>
-                                  <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm leading-relaxed shadow-sm ${isMe ? "bg-white text-gray-900 rounded-tr-none" : "bg-white/10 text-white/90 rounded-tl-none border border-white/10"}`}>
-                                    {msg.text}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="p-3 shrink-0 mt-2">
-                            <div className="bg-[#2b2b2b]/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 shadow-lg relative group">
-                              <textarea
-                                placeholder="Type a message..."
-                                value={messageDrafts[chat.id] || ""}
-                                onChange={(e) => handleInputChange(chat.id, e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSendMessage(chat.id);
-                                  }
-                                }}
-                                className="w-full bg-transparent text-white text-sm px-1 outline-none resize-none h-14 placeholder-white/30 custom-scrollbar"
-                              />
-                              <div className="h-1 w-full bg-white/10 my-2"></div>
-
-                              <div className="flex justify-between items-center pt-2">
-                                <div className="flex gap-3 text-white/60">
-                                  <button className="hover:text-purple-400 transition" title="AI Rewrite"><i className="fa-solid fa-wand-magic-sparkles"></i></button>
-                                  <button className="hover:text-white transition" title="Add Media"><i className="fa-solid fa-icons"></i></button>
-                                  <button className="hover:text-white transition" title="Attach File"><i className="fa-solid fa-paperclip"></i></button>
-                                </div>
-                                <button onClick={() => handleSendMessage(chat.id)} className="text-white hover:text-blue-400 transition-transform hover:scale-110">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
                       )}
-                    </AnimatePresence>
-                  </motion.div>
-                );
-              })}
 
-              <button onClick={() => openAddChatModal(col.id)} className="w-full py-3 border-2 border-dashed border-white/10 rounded-2xl text-white/40 hover:text-white/80 hover:bg-white/5 transition-all flex justify-center items-center gap-2 mt-2 shrink-0">
-                <span>+ Add Card</span>
+                      {/* --- ตอนที่ขยายการ์ด (isOpen) --- */}
+                      <AnimatePresence>
+                        {isOpen && (
+                          <motion.div initial={{ height: 0 }} animate={{ height: 450 }} exit={{ height: 0 }} className="flex flex-col bg-black/10 overflow-hidden">
+                            <div className="flex flex-col gap-1 border-b border-white/10 p-4 shrink-0 cursor-pointer hover:bg-white/5 transition-colors" onClick={() => handleToggleChat(chat.id)}>
+                              
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center flex-wrap gap-2 flex-1 min-w-0">
+                                  <h2 className="text-white font-bold text-lg truncate">{chat.name}</h2>
+                                  {(chat.tags || []).map((tagObj, i) => {
+                                    const tagName = typeof tagObj === 'object' ? tagObj.name : tagObj;
+                                    if (!tagName) return null;
+                                    const tagColor = typeof tagObj === 'object' ? tagObj.color : '#BE7EC7';
+                                    const tagEmoji = typeof tagObj === 'object' ? tagObj.emoji : '';
+                                    return (
+                                      <span
+                                        key={`${tagName}-${i}`}
+                                        className="text-[10px] font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1 whitespace-nowrap shadow-sm"
+                                        style={{ color: tagColor, borderColor: `${tagColor}40`, backgroundColor: `${tagColor}10` }}
+                                      >
+                                        {tagEmoji && <span>{tagEmoji}</span>}
+                                        {tagName}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${isIG ? "text-pink-400 border-pink-400/30 bg-pink-400/10" : isFB ? "text-blue-400 border-blue-400/30 bg-blue-400/10" : isLINE ? "text-green-400 border-green-400/30 bg-green-400/10" : isTG ? "text-sky-400 border-sky-400/30 bg-sky-400/10" : "text-white/50 border-white/20 bg-white/10"}`}>
+                                  {chat.platform}
+                                </span>
+                              </div>
+                              
+                              <div className="flex items-center mt-1">
+                                <span className={`text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${getStatusColorClass(chat.status)}`}>
+                                  {chat.status || "OPEN"}
+                                </span>
+                              </div>
+
+                            </div>
+
+                            <div ref={(el) => (chatContainerRefs.current[chat.id] = el)} className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
+                              {chat.messages?.map((msg, idx) => {
+                                const isMe = ["me", "admin", "agent"].includes(msg.from?.toLowerCase());
+                                const text = msg.text || "";
+
+                                const isImageMsg = msg.type === "IMAGE" || text.includes("/api/line/image/") || text.includes("/api/telegram/file/") || text.match(/\.(jpeg|jpg|gif|png|webp)/i) || text.includes("fbcdn.net") || text.includes("lookaside.fbsbx.com") || text.includes("ig_messaging_cdn") || text.includes("cdninstagram.com");
+
+                                return (
+                                  <div key={idx} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                                    <div className={`flex items-center gap-2 mb-1.5 text-[11px] text-white/50 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                                      <span className="font-medium">{isMe ? (msg.senderName || currentUser?.name || "Agent") : chat.name.split(" ")[0]}</span>
+                                      {msg.time && <span>{msg.time}</span>}
+                                    </div>
+                                    <div className={`max-w-[85%] break-words whitespace-pre-wrap px-4 py-2.5 text-[13px] rounded-2xl shadow-md ${isImageMsg ? "p-1 rounded-2xl bg-black/20" : isMe ? "bg-[#BE7EC7] text-white rounded-br-sm font-medium" : "bg-white/10 text-white/90 rounded-bl-sm border border-white/10"}`}>
+                                      {isImageMsg ? (
+                                        <img src={text} className="max-w-[200px] h-auto object-cover rounded-xl" loading="lazy" onError={(e) => { e.target.style.display = "none"; e.target.parentNode.innerHTML = '<div class="p-3 text-white/50 text-xs text-center"><i class="fa-solid fa-image-slash mb-1"></i><br/>รูปภาพไม่แสดงผล</div>'; }} />
+                                      ) : (
+                                        text
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="p-4 pt-1 shrink-0">
+                              <div className="bg-black/20 border border-white/10 rounded-xl p-3 flex flex-col focus-within:border-[#BE7EC7]/50 transition-colors">
+                                <textarea
+                                  placeholder="Type a message..."
+                                  value={messageDrafts[chat.id] || ""}
+                                  onChange={(e) => handleInputChange(chat.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      handleSendMessage(chat.id);
+                                    }
+                                  }}
+                                  className="w-full bg-transparent text-white text-[13px] outline-none resize-none h-12"
+                                />
+                                <div className="flex justify-end mt-2">
+                                  <button onClick={() => handleSendMessage(chat.id)} className="text-white/50 hover:text-[#BE7EC7] transition-colors bg-white/5 hover:bg-[#BE7EC7]/10 w-8 h-8 rounded-lg flex items-center justify-center">
+                                    <i className="fa-solid fa-paper-plane text-xs"></i>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                })}
+
+              <button onClick={() => openAddChatModal(col.column_id)} className="w-full py-3 border-2 border-dashed border-white/10 rounded-2xl text-white/40 hover:text-white/80 hover:bg-white/5 hover:border-white/20 transition-all flex justify-center items-center gap-2 mt-2 text-sm font-medium">
+                <span>+ Move Chat Here</span>
               </button>
             </div>
           </div>
         ))}
 
-        {columns.length < 3 && (
+        {columns.length < 5 && (
           <div className="min-w-[250px] pt-2">
             {isAddColumnMode ? (
-              <div className="bg-[rgba(32,41,59,0.25)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl p-4">
-                <input autoFocus className="w-full bg-transparent border-b border-white/30 text-white placeholder-white/50 outline-none mb-2" placeholder="List Name..." value={newColumnTitle} onChange={(e) => setNewColumnTitle(e.target.value)} />
-                <div className="flex gap-2 mt-2"><button onClick={handleAddColumn} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm">Add</button><button onClick={() => setIsAddColumnMode(false)} className="text-white/50 text-sm">X</button></div>
+              <div className="bg-white/5 border border-white/10 rounded-3xl p-4 shadow-xl">
+                <input autoFocus className="w-full bg-transparent border-b border-white/30 focus:border-[#BE7EC7] text-white outline-none mb-3 py-1 font-semibold transition-colors" placeholder="List Name..." value={newColumnTitle} onChange={(e) => setNewColumnTitle(e.target.value)} />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={handleAddColumn} className="flex-1 bg-gradient-to-tr from-[#BE7EC7] to-[#8a55b5] text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-md hover:opacity-90 transition-opacity">Save</button>
+                  <button onClick={() => setIsAddColumnMode(false)} className="px-4 text-white/50 hover:text-white hover:bg-white/10 rounded-lg text-sm transition-colors">Cancel</button>
+                </div>
               </div>
             ) : (
-              <button onClick={() => setIsAddColumnMode(true)} className="w-full bg-[rgba(32,41,59,0.25)] hover:bg-[rgba(32,41,59,0.4)] border border-[rgba(254,253,253,0.2)] text-white/70 h-14 rounded-3xl backdrop-blur-xl transition-all">+ Add another list</button>
+              <button onClick={() => setIsAddColumnMode(true)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/70 font-semibold h-14 rounded-3xl transition-all shadow-sm">+ Add new list</button>
             )}
           </div>
         )}
       </div>
 
+      {/* Select Chat Modal */}
       {isSelectChatModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-slate-800 border border-white/20 rounded-3xl p-6 w-[600px] shadow-2xl flex flex-col max-h-[80vh]">
-            <div className="flex justify-between items-center mb-4 shrink-0">
-              <h3 className="text-white text-xl font-semibold">Select Chat</h3>
-              <button onClick={() => setIsSelectChatModalOpen(false)} className="text-white/50 hover:text-white">✕</button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#1E1B29] border border-white/10 rounded-3xl p-6 w-[500px] shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <i className="fa-solid fa-arrow-right-arrow-left text-[#BE7EC7]"></i> Move Chat
+              </h3>
+              <button onClick={() => setIsSelectChatModalOpen(false)} className="w-8 h-8 rounded-full bg-white/5 text-white/50 hover:text-white hover:bg-white/10 transition-colors">✕</button>
             </div>
-            <div className="flex bg-slate-700/50 rounded-xl p-1 mb-4 shrink-0">
-              {["ALL", "LINE", "FACEBOOK"].map((f) => (
-                <button key={f} onClick={() => setChatFilter(f)} className={`flex-1 py-2 text-xs rounded-lg transition-all ${chatFilter === f ? "bg-white/20 text-white shadow" : "text-white/40"}`}>{f}</button>
+            <div className="flex bg-white/5 rounded-xl p-1 mb-4 border border-white/5 overflow-x-auto no-scrollbar shrink-0">
+              {["ALL", "FACEBOOK", "INSTAGRAM", "LINE", "TELEGRAM"].map((f) => (
+                <button key={f} onClick={() => setChatFilter(f)} className={`shrink-0 px-4 py-2 text-[11px] font-bold rounded-lg transition-all ${chatFilter === f ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white hover:bg-white/5"}`}>
+                  {f}
+                </button>
               ))}
             </div>
-            <div className="overflow-y-auto space-y-2 no-scrollbar pr-2 flex-1">
-              {getFilteredChats().length === 0 ? (<p className="text-center text-white/30 py-8">No chats found</p>) : (
-                getFilteredChats().map(chat => {
-                  const currentChatOnBoard = chats.find(c => c.id === chat.id);
-                  const isInCurrentColumn = currentChatOnBoard?.columnId === targetColumnIdForAdd;
-
-                  return (
-                    <div
-                      key={chat.id}
-                      onClick={() => handleAddChatToColumn(chat.id)}
-                      className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer border transition-all relative overflow-hidden
-                                    ${isInCurrentColumn
-                          ? "bg-white/5 border-white/5 opacity-70"
-                          : "hover:bg-white/10 border-transparent hover:border-white/10"
-                        }`}
-                    >
-                      {isInCurrentColumn && <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>}
-
-                      <div className="w-10 h-10 rounded-full bg-linear-to-tr from-gray-600 to-gray-500 flex items-center justify-center text-sm font-bold text-white shrink-0">{chat.avatar}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-center">
-                          <span className="text-white/90 text-sm font-medium truncate">{chat.name}</span>
-                          <span className={`text-[9px] px-1.5 rounded ${chat.platform === "line" || chat.channel === "Line" ? "bg-[#06c755]/20 text-[#06c755]" : "bg-[#1877f2]/20 text-[#1877f2]"}`}>{chat.platform === "line" || chat.channel === "Line" ? "LINE" : "FB"}</span>
-                        </div>
-                        <p className="text-xs text-white/40 truncate mt-0.5">
-                          {isInCurrentColumn
-                            ? "Already in this list"
-                            : currentChatOnBoard
-                              ? `Move from: ${columns.find(c => c.id === currentChatOnBoard.columnId)?.title || "Other List"}`
-                              : (chat.lastMessage || chat.message || "No messages")
-                          }
-                        </p>
+            <div className="overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+              {getFilteredChatsForModal().length > 0 ? (
+                getFilteredChatsForModal().map((chat) => (
+                  <div key={chat.id} onClick={() => handleMoveChatToColumn(chat.id)} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer border transition-all ${chat.columnId === targetColumnIdForAdd ? "bg-white/5 opacity-50 pointer-events-none" : "hover:bg-white/10 border-transparent hover:border-white/10"}`}>
+                    <img src={chat.imgUrl || "/avatar.png"} className="w-10 h-10 rounded-full object-cover bg-white/5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white text-sm font-bold truncate">{chat.name}</span>
+                        <span className={`text-[9px] px-1.5 rounded-md font-bold ${chat.platform === "INSTAGRAM" ? "text-pink-400 bg-pink-400/10" : chat.platform === "FACEBOOK" ? "text-blue-400 bg-blue-400/10" : chat.platform === "LINE" ? "text-green-400 bg-green-400/10" : chat.platform === "TELEGRAM" ? "text-sky-400 bg-sky-400/10" : "bg-white/10 text-white/50"}`}>
+                          {chat.platform}
+                        </span>
                       </div>
                     </div>
-                  );
-                })
+                  </div>
+                ))
+              ) : (
+                <div className="py-10 text-center text-white/40 text-sm">No chats available in this category</div>
               )}
             </div>
           </div>
