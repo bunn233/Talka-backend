@@ -2,7 +2,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Search,
-  Filter,
   ArrowUpDown,
   RefreshCw,
   ChevronDown,
@@ -11,7 +10,8 @@ import {
   UserPlus,
   Activity,
   Clock,
-  Shield, // ✅ แก้ไขจาก ShieldInfo เป็น Shield
+  Shield,
+  StickyNote
 } from "lucide-react";
 
 export default function ActivityLog() {
@@ -22,51 +22,65 @@ export default function ActivityLog() {
   const [activityLogs, setActivityLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ดึงข้อมูลจาก API จริง
   useEffect(() => {
     const fetchLogs = async () => {
       try {
         setIsLoading(true);
-        const mockData = [
-          { id: 1, type: "chat_incoming", actor: "Customer", target: "Support Team", timestamp: "2025-11-26T09:12:30.10", message: "Customer sent a new message", details: { channel: "Facebook", preview: "สวัสดีครับ ขอสอบถาม..." } },
-          { id: 2, type: "chat_incoming", actor: "Customer", target: "Support Team", timestamp: "2025-11-26T09:13:02.55", message: "Customer sent a new message", details: { channel: "Line", preview: "รบกวนเช็คสถานะออเดอร์..." } },
-          { id: 3, type: "invite_user", actor: "Owner", target: "new_member@test.com", timestamp: "2025-11-26T11:45:22.99", message: "Invited new team member", details: { role: "Employer", method: "Email Invite" } },
-          { id: 4, type: "tag_create", actor: "Admin A", target: "Tag: Hot Lead", timestamp: "2025-11-26T10:05:11.42", message: "Created new tag", details: { color: "red", category: "VIP" } },
-          { id: 5, type: "chat_incoming", actor: "Customer", target: "Support Team", timestamp: "2025-11-26T11:22:10.11", message: "Customer sent a new message", details: { channel: "Facebook", preview: "ขอบคุณมากครับ" } },
-          { id: 6, type: "tag_add", actor: "Admin B", target: "User Somchai", timestamp: "2025-11-26T11:22:10.11", message: "Added tag to user", details: { tag: "VIP", user: "Somchai" } },
-        ];
-        
-        setTimeout(() => {
-          setActivityLogs(mockData);
-          setIsLoading(false);
-        }, 800);
+        const response = await fetch('/api/activity-logs');
+        if (response.ok) {
+           const data = await response.json();
+           setActivityLogs(data.logs || []);
+        }
       } catch (error) {
+        console.error("Failed to fetch logs:", error);
+      } finally {
         setIsLoading(false);
       }
     };
     fetchLogs();
   }, []);
 
-  const getTypeConfig = (type) => {
-    switch (type) {
-      case "chat_incoming": return { label: "Chat", color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20", line: "bg-blue-400", icon: MessageCircle };
-      case "tag_create": return { label: "Tag System", color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20", line: "bg-emerald-400", icon: Tag };
-      case "tag_add": return { label: "User Tag", color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20", line: "bg-amber-400", icon: Tag };
-      case "invite_user": return { label: "Security", color: "text-[#BE7EC7]", bg: "bg-[#BE7EC7]/10", border: "border-[#BE7EC7]/20", line: "bg-[#BE7EC7]", icon: UserPlus };
-      default: return { label: "System", color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/20", line: "bg-slate-400", icon: Activity };
-    }
+  // ฟังก์ชันจัดการสีและไอคอนตาม Action ของฐานข้อมูล
+  const getTypeConfig = (action) => {
+    const act = (action || "").toLowerCase();
+    if (act.includes("chat") || act.includes("message")) return { label: "Chat", color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20", line: "bg-blue-400", icon: MessageCircle };
+    if (act.includes("tag")) return { label: "Tag System", color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20", line: "bg-amber-400", icon: Tag };
+    if (act.includes("note")) return { label: "Notes", color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20", line: "bg-emerald-400", icon: StickyNote };
+    if (act.includes("invite") || act.includes("user") || act.includes("status")) return { label: "System Activity", color: "text-[#BE7EC7]", bg: "bg-[#BE7EC7]/10", border: "border-[#BE7EC7]/20", line: "bg-[#BE7EC7]", icon: UserPlus };
+    
+    return { label: "System", color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/20", line: "bg-slate-400", icon: Activity };
   };
 
+  // ดึง Action ประเภททั้งหมดเพื่อมาทำ Dropdown อัตโนมัติ
+  const uniqueActions = useMemo(() => {
+    const actions = activityLogs.map(log => log.action).filter(Boolean);
+    return [...new Set(actions)];
+  }, [activityLogs]);
+
+  //  กรองข้อมูลและจัดเรียงตามฐานข้อมูลจริง
   const filteredLogs = useMemo(() => {
     let logs = [...activityLogs];
-    if (filterType !== "all") logs = logs.filter((log) => log.type === filterType);
-    if (searchText.trim() !== "") {
-      logs = logs.filter((log) => [log.message, log.actor, log.target].join(" ").toLowerCase().includes(searchText.toLowerCase()));
+    
+    if (filterType !== "all") {
+      logs = logs.filter((log) => log.action === filterType);
     }
+    
+    if (searchText.trim() !== "") {
+      logs = logs.filter((log) => 
+        [log.message, log.action, log.user?.username]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchText.toLowerCase())
+      );
+    }
+    
     logs.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
       return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
     });
+    
     return logs;
   }, [activityLogs, filterType, sortOrder, searchText]);
 
@@ -80,7 +94,6 @@ export default function ActivityLog() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-2xl bg-[#BE7EC7] flex items-center justify-center shadow-[0_0_15px_rgba(190,126,199,0.3)]">
-                    {/* ✅ แก้ไขจุดนี้เรียบร้อยแล้ว */}
                     <Shield size={22} className="text-white" /> 
                 </div>
                 <h1 className="text-2xl font-bold text-white tracking-tight">Activity Logs</h1>
@@ -110,9 +123,11 @@ export default function ActivityLog() {
               className="bg-transparent text-white/70 text-xs font-bold uppercase tracking-wider px-4 py-1.5 outline-none cursor-pointer"
             >
               <option value="all" className="bg-[#1F192E]">All Events</option>
-              <option value="chat_incoming" className="bg-[#1F192E]">Incoming Chats</option>
-              <option value="tag_create" className="bg-[#1F192E]">Tag Management</option>
-              <option value="invite_user" className="bg-[#1F192E]">Team Invites</option>
+              {uniqueActions.map(action => (
+                 <option key={action} value={action} className="bg-[#1F192E]">
+                    {action?.replace(/_/g, ' ').toUpperCase()}
+                 </option>
+              ))}
             </select>
             <div className="w-px h-4 bg-white/10"></div>
             <select
@@ -126,7 +141,7 @@ export default function ActivityLog() {
           </div>
 
           <button
-            onClick={() => { setSearchText(""); setFilterType("all"); }}
+            onClick={() => { setSearchText(""); setFilterType("all"); setSortOrder("newest"); }}
             className="ml-auto flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 text-white/40 text-xs font-bold uppercase tracking-widest hover:bg-[#BE7EC7] hover:text-white transition-all duration-300 shadow-sm"
           >
             <RefreshCw size={14} /> Reset
@@ -134,7 +149,7 @@ export default function ActivityLog() {
         </div>
 
         {/* Logs List Container */}
-        <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar min-h-0">
           <div className="space-y-3">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -148,18 +163,19 @@ export default function ActivityLog() {
               </div>
             ) : (
               filteredLogs.map((log) => {
-                const config = getTypeConfig(log.type);
+                const config = getTypeConfig(log.action);
                 const Icon = config.icon;
-                const isExpanded = expandedRow === log.id;
+                const uniqueId = log.log_id || log.id;
+                const isExpanded = expandedRow === uniqueId;
 
                 return (
-                  <div key={log.id} 
+                  <div key={uniqueId} 
                     className={`group relative bg-[#1F192E] border rounded-[1.5rem] transition-all duration-300 ${isExpanded ? 'border-[#BE7EC7]/40 shadow-xl' : 'border-white/[0.03] hover:border-white/10 hover:shadow-lg hover:-translate-y-0.5'}`}
                   >
                     {/* Status Accent Line */}
                     <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 rounded-r-full ${config.line} transition-all`}></div>
 
-                    <div onClick={() => setExpandedRow(isExpanded ? null : log.id)} className="flex items-center gap-5 p-4 cursor-pointer">
+                    <div onClick={() => setExpandedRow(isExpanded ? null : uniqueId)} className="flex items-center gap-5 p-4 cursor-pointer">
                       {/* Icon Box */}
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${config.bg} ${config.color} border border-white/5`}>
                         <Icon size={22} />
@@ -168,23 +184,25 @@ export default function ActivityLog() {
                       {/* Main Info */}
                       <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
                         <div className="lg:col-span-5">
-                          <h4 className="text-white font-bold text-sm truncate">{log.message}</h4>
+                          <h4 className="text-white font-bold text-sm truncate">{log.message || log.action?.replace(/_/g, ' ')}</h4>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${config.color} opacity-80`}>{config.label}</span>
                         </div>
 
                         <div className="lg:col-span-4 flex items-center gap-2 text-xs">
-                          <span className="text-white font-bold px-2 py-1 bg-white/5 rounded-lg">{log.actor}</span>
+                          <span className="text-white font-bold px-2 py-1 bg-white/5 rounded-lg">{log.user?.username || "System"}</span>
                           <span className="text-white/20">→</span>
-                          <span className="text-white/50 truncate font-medium">{log.target}</span>
+                          <span className="text-white/50 truncate font-medium">
+                              {log.chat_session_id ? `Chat Room #${log.chat_session_id}` : "System Event"}
+                          </span>
                         </div>
 
                         <div className="lg:col-span-3 text-right flex flex-col items-end">
                           <div className="flex items-center gap-2 text-[11px] text-white/30 font-bold">
                             <Clock size={12} />
-                            {new Date(log.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                            {new Date(log.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </div>
                           <div className="text-[10px] text-white/20 mt-0.5 font-mono">
-                            {new Date(log.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            {new Date(log.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
                           </div>
                         </div>
                       </div>
@@ -199,15 +217,24 @@ export default function ActivityLog() {
                       <div className="px-5 pb-5 pt-1 animate-in slide-in-from-top-2 duration-300">
                         <div className="bg-[#161223] rounded-2xl p-5 border border-white/5 shadow-inner">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {Object.entries(log.details).map(([key, value]) => (
-                              <div key={key} className="flex flex-col border-b border-white/[0.03] pb-2 last:border-0 last:pb-0">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-white/20 mb-1">{key}</span>
-                                <span className="text-sm text-white font-medium">{value}</span>
-                              </div>
-                            ))}
-                            <div className="flex flex-col border-b border-white/[0.03] pb-2 last:border-0 last:pb-0">
+                            
+                            {/* Old Value vs New Value (ถ้ามี) */}
+                            {log.old_value && (
+                                <div className="flex flex-col border-b border-white/[0.03] pb-2">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-white/20 mb-1">Previous Data</span>
+                                  <span className="text-sm text-red-400 font-medium line-through break-words">{log.old_value}</span>
+                                </div>
+                            )}
+                            {log.new_value && (
+                                <div className="flex flex-col border-b border-white/[0.03] pb-2">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-white/20 mb-1">New Data</span>
+                                  <span className="text-sm text-green-400 font-medium break-words">{log.new_value}</span>
+                                </div>
+                            )}
+                            
+                            <div className="flex flex-col border-b border-white/[0.03] pb-2 last:border-0 last:pb-0 sm:col-span-2 mt-2">
                                 <span className="text-[9px] font-black uppercase tracking-widest text-white/20 mb-1">Transaction ID</span>
-                                <span className="text-xs text-white/40 font-mono italic">log_trace_{log.id}x99</span>
+                                <span className="text-xs text-white/40 font-mono italic">log_trace_{uniqueId}</span>
                             </div>
                           </div>
                         </div>

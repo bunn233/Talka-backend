@@ -9,98 +9,19 @@ export default function ActivityLog() {
   const [sortOrder, setSortOrder] = useState("newest");
   const [searchText, setSearchText] = useState("");
 
-  // 🟢 [BACKEND NOTE]: สร้าง State สำหรับเก็บข้อมูลที่ได้จาก API
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 🟢 [BACKEND NOTE]: ดึงข้อมูลจาก API เมื่อ Component ถูกโหลด
+  // ดึงข้อมูลจาก API จริง
   useEffect(() => {
     const fetchLogs = async () => {
       setIsLoading(true);
       try {
-        // 🟢 [API CALL]: โค้ดตัวอย่างสำหรับการดึงข้อมูลจริง
-        // const response = await fetch('/api/activity-logs');
-        // const data = await response.json();
-        // setLogs(data);
-
-        // ==========================================
-        // [Mock Processing] ข้อมูลจำลองชั่วคราวระหว่างรอต่อ API
-        const mockData = [
-          {
-            id: 1,
-            type: "chat_incoming",
-            actor: "Customer",
-            target: "Support Team",
-            timestamp: "2025-11-26T09:12:30.10",
-            message: "Customer sent a new message",
-            details: { channel: "Facebook", preview: "สวัสดีครับ ขอสอบถาม..." },
-          },
-          {
-            id: 2,
-            type: "chat_incoming",
-            actor: "Customer",
-            target: "Support Team",
-            timestamp: "2025-11-26T09:13:02.55",
-            message: "Customer sent a new message",
-            details: { channel: "Line", preview: "สวัสดีครับ ขอสอบถาม..." },
-          },
-          {
-            id: 3,
-            type: "invite_user",
-            actor: "Owner",
-            target: "new_member@test.com",
-            timestamp: "2025-11-26T11:45:22.99",
-            message: "Invited new team member",
-            details: { role: "Employer", method: "Email Invite" },
-          },
-          {
-            id: 4,
-            type: "tag_create",
-            actor: "Admin A",
-            target: "Tag: Hot Lead",
-            timestamp: "2025-11-26T10:05:11.42",
-            message: "Created new tag",
-            details: { color: "red", category: "VIP" },
-          },
-          {
-            id: 5,
-            type: "chat_incoming",
-            actor: "Customer",
-            target: "Support Team",
-            timestamp: "2025-11-26T11:22:10.11",
-            message: "Customer sent a new message",
-            details: { channel: "Facebook", preview: "สวัสดีครับ ขอสอบถาม..." },
-          },
-          {
-            id: 6,
-            type: "tag_add",
-            actor: "Admin B",
-            target: "User #5521",
-            timestamp: "2025-11-26T11:22:10.11",
-            message: "Added tag to user",
-            details: { tag: "VIP", user: "Somchai" },
-          },
-          {
-            id: 7,
-            type: "invite_user",
-            actor: "Owner",
-            target: "new_member@test.com",
-            timestamp: "2025-11-26T11:46:03.44",
-            message: "Invited new team member",
-            details: { role: "Employer", method: "Email Invite" },
-          },
-          {
-            id: 8,
-            type: "chat_incoming",
-            actor: "Customer",
-            target: "Support Team",
-            timestamp: "2025-11-26T09:15:47.20",
-            message: "Customer sent a new message",
-            details: { channel: "Line", preview: "สวัสดีครับ ขอสอบถาม..." },
-          },
-        ];
-        setLogs(mockData);
-
+        const response = await fetch('/api/activity-logs');
+        if (response.ok) {
+           const data = await response.json();
+           setLogs(data.logs || []);
+        }
       } catch (error) {
         console.error("Failed to fetch activity logs", error);
       } finally {
@@ -111,180 +32,217 @@ export default function ActivityLog() {
     fetchLogs();
   }, []);
 
-  const typeLabel = {
-    chat_incoming: "Chat Incoming",
-    tag_create: "Create Tag",
-    tag_add: "Add Tag",
-    invite_user: "Invite User",
+  // ฟังก์ชันจัดรูปแบบวันที่
+  const formatDate = (isoString) => {
+    if (!isoString) return "";
+    const date = new Date(isoString);
+    return date.toLocaleString('en-GB', { 
+        day: '2-digit', month: 'short', year: 'numeric', 
+        hour: '2-digit', minute: '2-digit', second: '2-digit' 
+    });
   };
 
-  const typeColor = {
-    chat_incoming: "text-sky-400",
-    tag_create: "text-green-400",
-    tag_add: "text-yellow-300",
-    invite_user: "text-purple-300",
+  // จัดการสีของแต่ละ Action
+  const typeColor = (action) => {
+    const act = (action || "").toLowerCase();
+    if (act.includes("delete") || act.includes("trash") || act.includes("remove")) return "text-red-400";
+    if (act.includes("create") || act.includes("add") || act.includes("restore")) return "text-green-400";
+    if (act.includes("edit") || act.includes("update") || act.includes("change")) return "text-blue-400";
+    if (act.includes("tag")) return "text-yellow-300";
+    if (act.includes("invite")) return "text-purple-300";
+    return "text-sky-400";
   };
 
-  // FILTER + SORT + SEARCH
-  // 🟢 [BACKEND NOTE]: ปัจจุบันระบบ Filter/Sort ทำงานแบบ Client-Side
-  // หากระบบมี Log สะสมเกิน 1,000 รายการ ควรเปลี่ยนไปให้ Backend เป็นคนกรองข้อมูล 
-  // โดยส่งผ่าน Query Params แทน เช่น fetch(`/api/logs?type=${filterType}&search=${searchText}&sort=${sortOrder}`)
+  // ค้นหา กรอง และจัดเรียงข้อมูล
   const filteredLogs = useMemo(() => {
     let logsToFilter = [...logs];
 
-    //  FILTER TYPE
+    // 1. กรองตามประเภท
     if (filterType !== "all") {
-      logsToFilter = logsToFilter.filter((log) => log.type === filterType);
+      logsToFilter = logsToFilter.filter((log) => log.action === filterType);
     }
 
-    // SEARCH (message, actor, target)
+    // 2. ค้นหาข้อความ
     if (searchText.trim() !== "") {
       logsToFilter = logsToFilter.filter((log) =>
-        [log.message, log.actor, log.target]
+        [log.message, log.action, log.user?.username]
           .join(" ")
           .toLowerCase()
           .includes(searchText.toLowerCase())
       );
     }
 
-    // SORT
+    // 3. จัดเรียง
     logsToFilter.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
       return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
     });
 
     return logsToFilter;
   }, [logs, filterType, sortOrder, searchText]);
 
+  // ดึงประเภท Action ที่มีทั้งหมดในระบบมาทำเป็น Dropdown อัตโนมัติ
+  const uniqueActions = useMemo(() => {
+    const actions = logs.map(log => log.action).filter(Boolean);
+    return [...new Set(actions)];
+  }, [logs]);
+
   return (
     <div className="w-full h-[94vh] p-2 md:p-4">
       <div className="bg-[rgba(32,41,59,0.25)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl pt-5 px-4 h-full flex flex-col">
+        
         {/* FILTER BAR */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-6 shrink-0">
           {/* FILTER TYPE */}
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/20 text-white"
+            className="w-full px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white outline-none focus:ring-2 focus:ring-[#BE7EC7] transition-all cursor-pointer"
           >
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="all"
-            >
+            <option className="bg-[#1E1B29] text-white" value="all">
               All Activities
             </option>
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="chat_incoming"
-            >
-              Chat Incoming
-            </option>
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="tag_create"
-            >
-              Create Tag
-            </option>
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="tag_add"
-            >
-              Add Tag
-            </option>
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="invite_user"
-            >
-              Invite User
-            </option>
+            {uniqueActions.map(action => (
+                <option key={action} className="bg-[#1E1B29] text-white" value={action}>
+                    {action.replace(/_/g, ' ').toUpperCase()}
+                </option>
+            ))}
           </select>
 
           {/* SORT */}
           <select
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/20 text-white"
+            className="w-full px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white outline-none focus:ring-2 focus:ring-[#BE7EC7] transition-all cursor-pointer"
           >
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="newest"
-            >
-              Newest
-            </option>
-            <option
-              className="bg-[rgba(24,23,23,0.52)] backdrop-blur-xl"
-              value="oldest"
-            >
-              Oldest
-            </option>
+            <option className="bg-[#1E1B29] text-white" value="newest">Newest First</option>
+            <option className="bg-[#1E1B29] text-white" value="oldest">Oldest First</option>
           </select>
 
           {/* SEARCH */}
           <input
-            placeholder="Search activities..."
+            placeholder="Search activities, users, messages..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/20 text-white"
+            className="w-full px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white placeholder-white/50 outline-none focus:ring-2 focus:ring-[#BE7EC7] transition-all"
           />
 
           <button
-            onClick={() => setSearchText("")}
-            className="w-full px-4 py-2 rounded-lg bg-white/20 text-white"
+            onClick={() => {
+                setSearchText("");
+                setFilterType("all");
+                setSortOrder("newest");
+            }}
+            className="w-full px-4 py-2.5 rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-300 border border-white/10 hover:border-red-500/30 text-white transition-all font-medium"
           >
-            Refresh
+            Reset Filters
           </button>
         </div>
 
         {/* LOG LIST */}
-        <div className="space-y-3 overflow-auto">
+        <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-2 pb-4 min-h-0">
           {isLoading ? (
-            <p className="text-center text-gray-300 py-6 animate-pulse">Loading logs...</p>
+            <div className="flex flex-col justify-center items-center h-40 opacity-50">
+                <i className="fa-solid fa-spinner fa-spin text-3xl mb-3 text-[#BE7EC7]"></i>
+                <p className="text-gray-300 text-sm">Loading activity logs...</p>
+            </div>
           ) : (
             filteredLogs.map((log) => (
-              <div key={log.id}>
+              <div key={log.log_id || log.id} className="group">
+                {/* แถบหัวข้อ Log */}
                 <button
                   onClick={() =>
-                    setExpandedRow(expandedRow === log.id ? null : log.id)
+                    setExpandedRow(expandedRow === (log.log_id || log.id) ? null : (log.log_id || log.id))
                   }
-                  className="w-full text-left px-4 py-3 rounded-lg bg-white/20 text-white"
+                  className="w-full text-left px-5 py-4 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-white/10 text-white transition-all duration-300"
                 >
-                  <div className="flex justify-between">
-                    <div className="space-y-1">
-                      <p className="text-xs text-gray-300">{log.timestamp}</p>
-
-                      <p className={`text-sm font-bold ${typeColor[log.type]}`}>
-                        {typeLabel[log.type]}
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1.5 flex-1 pr-4">
+                      <p className="text-[11px] text-[#BE7EC7]/70 font-medium tracking-wide">
+                          {formatDate(log.created_at)}
                       </p>
 
-                      <p className="text-base">{log.message}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-white/5 border border-white/10 ${typeColor(log.action)}`}>
+                            {log.action?.replace(/_/g, ' ') || "SYSTEM ACTION"}
+                          </span>
+                          <p className="text-sm text-gray-300">
+                            <strong className="text-white">{log.user?.username || "System"}</strong> 
+                            {log.chat_session_id && (
+                                <>
+                                    <span className="mx-1.5 text-gray-500">in chat</span> 
+                                    <span className="text-[#BE7EC7] text-xs px-1.5 py-0.5 rounded bg-[#BE7EC7]/10">#{log.chat_session_id}</span>
+                                </>
+                            )}
+                          </p>
+                      </div>
 
-                      <p className="text-sm text-gray-300">
-                        {log.actor} → {log.target}
-                      </p>
+                      {log.message && (
+                          <p className="text-sm text-white/80 mt-1 line-clamp-2">{log.message}</p>
+                      )}
                     </div>
 
-                    <span className="text-gray-400">
-                      <i className="fa-solid fa-chevron-down"></i>
+                    <span className={`text-gray-500 bg-white/5 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/10 ${expandedRow === (log.log_id || log.id) ? 'rotate-180 bg-[#BE7EC7]/20 text-[#BE7EC7]' : ''}`}>
+                      <i className="fa-solid fa-chevron-down text-xs"></i>
                     </span>
                   </div>
                 </button>
 
-                {expandedRow === log.id && (
-                  <pre className="bg-black/40 p-4 mt-2 rounded-xl border border-gray-700 text-xs overflow-auto">
-                    {JSON.stringify(log.details, null, 2)}
-                  </pre>
+                {/* ข้อมูลเพิ่มเติม (Expanded Details) - แสดง Old/New Value */}
+                {expandedRow === (log.log_id || log.id) && (
+                  <div className="bg-black/20 p-5 mt-1 rounded-xl border border-white/5 text-sm overflow-hidden animate-in slide-in-from-top-2 duration-200 ml-4">
+                      <div className="grid grid-cols-2 gap-4">
+                          {log.old_value && (
+                              <div>
+                                  <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">Previous Value</p>
+                                  <div className="bg-red-500/5 border border-red-500/10 text-red-300/80 p-2.5 rounded-lg line-through text-xs break-words">
+                                      {log.old_value}
+                                  </div>
+                              </div>
+                          )}
+                          {log.new_value && (
+                              <div>
+                                  <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">New Value</p>
+                                  <div className="bg-green-500/10 border border-green-500/20 text-green-300 p-2.5 rounded-lg text-xs break-words">
+                                      {log.new_value}
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                      
+                      {/* ถ้ามี Metadata */}
+                      {log.metadata && Object.keys(log.metadata).length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-white/5">
+                              <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">System Metadata</p>
+                              <pre className="text-xs text-gray-400 bg-black/40 p-3 rounded-lg overflow-x-auto custom-scrollbar border border-white/5">
+                                  {JSON.stringify(log.metadata, null, 2)}
+                              </pre>
+                          </div>
+                      )}
+
+                      {(!log.old_value && !log.new_value && (!log.metadata || Object.keys(log.metadata).length === 0)) && (
+                          <p className="text-gray-500 text-center italic text-xs py-2">No further details recorded for this event.</p>
+                      )}
+                  </div>
                 )}
               </div>
             ))
           )}
 
           {!isLoading && filteredLogs.length === 0 && (
-            <p className="text-center text-gray-300 py-6">
-              No activities found.
-            </p>
+            <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <i className="fa-solid fa-clock-rotate-left text-2xl text-gray-400"></i>
+                </div>
+                <p className="text-center text-gray-300 font-medium">
+                  No activities found
+                </p>
+                <p className="text-center text-gray-500 text-xs mt-1">Try adjusting your filters or search terms.</p>
+            </div>
           )}
         </div>
+
       </div>
     </div>
   );

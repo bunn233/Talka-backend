@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { pusherServer } from "@/lib/pusher";
+import { dbLog } from "@/lib/dbLogger";
 
 // 🟢 GET: ดึง Note ทั้งหมด (รวมถึงอันที่ถูก Soft Delete เป็นสีเทาๆ)
 export async function GET(req, context) {
@@ -41,12 +42,11 @@ export async function POST(req, context) {
             data: { chat_session_id: parsedChatId, title, content: text, user_id: currentUserId },
         });
 
-        await prisma.activityLog.create({
-            data: {
-                action: "ADD_NOTE", new_value: `${title}: ${text}`,
-                chat: { connect: { chat_session_id: parsedChatId } },
-                user: { connect: { user_id: currentUserId } }
-            }
+        await dbLog({
+            action: "add_note",
+            new_value: `${title}: ${text}`,
+            chat_session_id: parsedChatId,
+            user_id: currentUserId
         });
 
         const chatSession = await prisma.chatSession.findUnique({
@@ -96,22 +96,19 @@ export async function PATCH(req, context) {
 
         // 🔥 เก็บ Log แยกประเภท: 1. แก้ไขข้อความ 2. ส่งลงถังขยะ 3. กู้คืน
         if (title && text) {
-            await prisma.activityLog.create({
-                data: {
-                    action: "EDIT_NOTE", new_value: `${title}: ${text}`,
-                    chat: { connect: { chat_session_id: parsedChatId } },
-                    user: { connect: { user_id: currentUserId } }
-                }
+            await dbLog({
+                action: "edit_note", 
+                new_value: `${title}: ${text}`,
+                chat_session_id: parsedChatId,
+                user_id: currentUserId
             });
         } else if (typeof is_deleted === "boolean") {
-            const actionName = is_deleted ? "TRASH_NOTE" : "RESTORE_NOTE";
-            await prisma.activityLog.create({
-                data: {
-                    action: actionName, 
-                    old_value: updatedNote.title,
-                    chat: { connect: { chat_session_id: parsedChatId } },
-                    user: { connect: { user_id: currentUserId } }
-                }
+            const actionName = is_deleted ? "trash_note" : "restore_note";
+            await dbLog({
+                action: actionName, 
+                old_value: updatedNote.title,
+                chat_session_id: parsedChatId,
+                user_id: currentUserId
             });
         }
 
@@ -155,15 +152,13 @@ export async function DELETE(req, context) {
         await prisma.note.delete({ where: { note_id: parseInt(noteId) } });
 
         if (noteToDelete) {
-            await prisma.activityLog.create({
-                data: {
-                    action: "DELETE_NOTE", old_value: noteToDelete.title,
-                    chat: { connect: { chat_session_id: parsedChatId } },
-                    user: { connect: { user_id: currentUserId } }
-                }
+            await dbLog({
+                action: "delete_note", 
+                old_value: noteToDelete.title,
+                chat_session_id: parsedChatId,
+                user_id: currentUserId
             });
         }
-
         const chatSession = await prisma.chatSession.findUnique({
             where: { chat_session_id: parsedChatId }, select: { channel: { select: { workspace_id: true } } }
         });
