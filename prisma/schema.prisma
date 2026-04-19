@@ -71,11 +71,35 @@ model User {
   workspaces   WorkspaceMember[]
   sent_invites WorkspaceInvite[]
 
+  teams         TeamMember[]
   assignments   Assignment[]
   notes         Note[]
   activity_logs ActivityLog[]
   chat_sessions ChatSession[] @relation("AssignedAgent")
 }
+
+// ------------------------------------------------------
+// TEAM MANAGEMENT
+// ------------------------------------------------------
+model Team {
+  team_id     Int          @id @default(autoincrement())
+  team_name   String
+  description String?
+  platforms   Json         @default("[]")
+
+  members     TeamMember[]
+}
+
+model TeamMember {
+  team_member_id Int  @id @default(autoincrement())
+
+  team_id Int
+  user_id Int
+
+  team Team @relation(fields: [team_id], references: [team_id])
+  user User @relation(fields: [user_id], references: [user_id])
+}
+
 
 model Channel {
   channel_id Int @id @default(autoincrement())

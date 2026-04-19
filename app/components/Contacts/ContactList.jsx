@@ -1,8 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react'; 
 
-// 🟢 [BACKEND NOTE]: ลบ import mock data เหล่านี้ออกเมื่อเชื่อมต่อ API สำเร็จ
-import { unifiedMockData } from '@/app/data/mockData'; 
 import { DEFAULT_TAGS } from "@/app/data/defaultTags";
 
 import ContactDetail from '@/app/components/Contacts/ContactDetail'; 
@@ -42,7 +40,10 @@ export default function ContactList() {
     useEffect(() => {
         const fetchContacts = async () => {
             try {
-                setContacts(unifiedMockData);
+                const response = await fetch("/api/customers");
+                if (!response.ok) throw new Error("Failed to fetch contacts");
+                const data = await response.json();
+                setContacts(data);
             } catch (error) {
                 console.error("Failed to load contacts", error);
             } finally {
@@ -55,7 +56,10 @@ export default function ContactList() {
     useEffect(() => {
         const fetchTags = async () => {
             try {
-                setAvailableTags(DEFAULT_TAGS);
+                const response = await fetch("/api/tags");
+                if (!response.ok) throw new Error("Failed to fetch tags");
+                const data = await response.json();
+                setAvailableTags(data);
             } catch (error) {
                 console.error("Failed to load tags", error);
             }
@@ -74,7 +78,23 @@ export default function ContactList() {
         Object.keys(contactToSave).forEach(key => { if (contactToSave[key] === "") contactToSave[key] = null; });
         
         try {
-            const newContacts = contacts.map(c => c.id === contactToSave.id ? contactToSave : c);
+            const response = await fetch(`/api/customers/${contactToSave.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: contactToSave.name,
+                    email: contactToSave.email,
+                    phone: contactToSave.phone,
+                    company: contactToSave.company,
+                    country: contactToSave.country,
+                    tags: contactToSave.tags,
+                    chat_session_id: contactToSave.chat_session_id
+                })
+            });
+
+            if (!response.ok) throw new Error("Failed to update contact");
+            const updatedData = await response.json();
+            const newContacts = contacts.map(c => c.id === contactToSave.id ? updatedData : c);
             setContacts(newContacts);
             handleCloseModal(); 
         } catch (error) {
@@ -84,6 +104,11 @@ export default function ContactList() {
 
     const handleDeleteContact = async (contactId) => {
         try {
+            const response = await fetch(`/api/customers/${contactId}`, {
+                method: "DELETE"
+            });
+
+            if (!response.ok) throw new Error("Failed to delete contact");
             const newContacts = contacts.filter(c => c.id !== contactId);
             setContacts(newContacts);
         } catch (error) {
@@ -95,21 +120,38 @@ export default function ContactList() {
 
     const confirmDelete = async () => {
         try {
+            // รอรับ Response จากทุกๆ การลบ
+            const responses = await Promise.all(selectedIds.map(id => 
+                fetch(`/api/customers/${id}`, { method: "DELETE" })
+            ));
+
+            // เช็คว่ามี API ตัวไหนคืนค่าพังกลับมาไหม (เช่น Status 500)
+            const allOk = responses.every(res => res.ok);
+            if (!allOk) {
+                throw new Error("Some deletions failed on the server.");
+            }
+
+            // ถ้าฝั่ง Server ลบสำเร็จ 100% ค่อยอัปเดตหน้าจอ React
             const newContacts = contacts.filter(c => !selectedIds.includes(c.id));
             setContacts(newContacts);
             setSelectedIds([]);
             setIsDeleteModalOpen(false);
         } catch (error) {
             console.error("Failed to delete contacts", error);
+            alert("เกิดข้อผิดพลาดในการลบข้อมูล กรุณาลองใหม่อีกครั้ง"); // แจ้งเตือนผู้ใช้
         }
     };
 
     const handleAddContact = async (newContactData) => {
-        const nameQuery = newContactData.name ? newContactData.name.replace(' ', '+') : 'New+User';
-        const imgUrl = `https://ui-avatars.com/api/?name=${nameQuery}&background=random`;
-        const payload = { ...newContactData, imgUrl: imgUrl };
         try {
-            const newContact = { ...payload, id: Date.now() };
+            const response = await fetch("/api/customers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newContactData)
+            });
+
+            if (!response.ok) throw new Error("Failed to add contact");
+            const newContact = await response.json();
             setContacts(prevContacts => [newContact, ...prevContacts]);
             setIsAddModalOpen(false);
         } catch (error) {
@@ -121,14 +163,23 @@ export default function ContactList() {
         const filtered = contacts.filter(contact => {
             const nameMatch = contact.name.toLowerCase().includes(searchTerm.toLowerCase());
             const channelMatch = !filters.channel || contact.channel === filters.channel;
-            const tagMatch = !filters.tag || (Array.isArray(contact.tags) ? contact.tags.includes(filters.tag) : contact.tags === filters.tag);
+            const tagMatch = !filters.tag || (Array.isArray(contact.tags) ? contact.tags.some(t => (typeof t === 'object' ? t.name : t) === filters.tag) : contact.tags === filters.tag);
             const statusMatch = !filters.status || contact.status === filters.status;
             const companyMatch = !filterCompany || contact.company === filterCompany;
             return nameMatch && channelMatch && tagMatch && statusMatch && companyMatch;
         });
 
         return filtered.sort((a, b) => {
-            const statusOrder = { "New Chat": 1, "Pending": 2, "Open": 3, "Closed": 4 };
+            const statusOrder = { 
+                "New Chat": 1, 
+                "NEW": 1,
+                "Pending": 2, 
+                "PENDING": 2,
+                "Open": 3, 
+                "OPEN": 3,
+                "Closed": 4,
+                "CLOSED": 4
+            };
             return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
         });
     }, [contacts, searchTerm, filters, filterCompany]);
@@ -151,11 +202,13 @@ export default function ContactList() {
     };
 
     const getStatusStyle = (status) => {
-        switch(status) {
-            case 'Open': return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-            case 'Pending': return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-            case 'New Chat': return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-            case 'Closed': return "bg-white/5 text-white/40 border-white/10";
+        const s = String(status || "").toUpperCase();
+        switch(s) {
+            case 'OPEN': return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+            case 'PENDING': return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+            case 'CLOSED': return "bg-red-500/10 text-red-400 border-red-500/20";
+            case 'NEW':
+            case 'NEW CHAT': return "bg-blue-500/10 text-blue-400 border-blue-500/20";
             default: return "bg-gray-500/10 text-gray-400 border-gray-500/20";
         }
     };
@@ -274,18 +327,21 @@ export default function ContactList() {
                                         </td>
                                         <td className="py-4 px-4">
                                             {(() => {
-                                                const tagName = Array.isArray(contact.tags) ? contact.tags[0] : contact.tags;
-                                                const tagData = availableTags.find(t => t.name === tagName);
-                                                return tagData ? (
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border border-white/5 shadow-sm text-white bg-opacity-20" style={{ backgroundColor: `${tagData.color}22`, color: tagData.color, borderColor: `${tagData.color}44` }}>
-                                                        {tagData.emoji} {tagData.name}
+                                                if (!Array.isArray(contact.tags) || contact.tags.length === 0) return <span className="text-white/20">—</span>;
+                                                const tag = contact.tags[0];
+                                                const tagName = typeof tag === 'object' ? tag.name : tag;
+                                                const tagColor = typeof tag === 'object' ? tag.color : '#BE7EC7';
+                                                if (!tagName) return <span className="text-white/20">—</span>;
+                                                return (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border shadow-sm" style={{ backgroundColor: `${tagColor}22`, color: tagColor, borderColor: `${tagColor}44` }}>
+                                                        {tagName}
                                                     </span>
-                                                ) : <span className="text-white/20">—</span>;
+                                                );
                                             })()}
                                         </td>
                                         <td className="py-4 px-6 text-right">
                                             <span className={`inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${getStatusStyle(contact.status)}`}>
-                                                {contact.status || "N/A"}
+                                                {contact.status ? contact.status.charAt(0).toUpperCase() + contact.status.slice(1).toLowerCase() : "N/A"}
                                             </span>
                                         </td>
                                     </tr>

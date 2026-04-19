@@ -297,11 +297,33 @@ export default function ChatMessage({
 
           <div className="min-w-0 flex-1 flex flex-col items-start">
             <h2 className="text-white font-semibold text-lg truncate leading-tight mb-1">{chat?.name}</h2>
-            {isNewChat ? (
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border bg-red-500/10 text-red-500 border-red-500/20">NEW CHAT</span>
-            ) : (
-              <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${getStatusColorClass(displayStatus)}`}>{displayStatus}</span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {isNewChat ? (
+                <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border bg-red-500/10 text-red-500 border-red-500/20">NEW CHAT</span>
+              ) : (
+                <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${getStatusColorClass(displayStatus)}`}>{displayStatus}</span>
+              )}
+              
+              {/* Tag Badges */}
+              {(chat?.tags || []).map((tagObj, i) => {
+                const tagName = typeof tagObj === 'object' ? tagObj.name : tagObj;
+                if (!tagName) return null;
+
+                const tagColor = typeof tagObj === 'object' ? tagObj.color : '#BE7EC7';
+                const tagEmoji = typeof tagObj === 'object' ? tagObj.emoji : '';
+
+                return (
+                  <span
+                    key={`${tagName}-${i}`}
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md border flex items-center gap-1 whitespace-nowrap"
+                    style={{ color: tagColor, borderColor: `${tagColor}40`, backgroundColor: `${tagColor}10` }}
+                  >
+                    {tagEmoji && <span>{tagEmoji}</span>}
+                    {tagName}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         </div>
 
