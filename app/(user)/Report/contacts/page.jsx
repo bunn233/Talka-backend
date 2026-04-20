@@ -1,361 +1,172 @@
-"use client"
+"use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Info, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Users, UserPlus, TrendingUp, MessageSquare,
+  UserCheck, ExternalLink, MessageCircle,
+} from "lucide-react";
 
-// 🟢 [BACKEND NOTE]: ลบไฟล์ mock นี้ออกเมื่อต่อ API
-import { calenderData } from "../../../data/calenderData";
+import {
+  StatsCard, ReportCard, ReportTable, ReportTableRow, ReportTableCell,
+  ReportDatePicker, ReportPagination, ReportPageWrapper, ChartContainer,
+  StatusBadge, CustomTooltip, ExportCSVButton, ReportSkeleton, EmptyState,
+  useReportData, formatTime, CHART_COLORS, CHART_THEME, PLATFORM_COLORS,
+} from "@/app/components/Report/ReportShared";
 
-import { DateRange } from "react-date-range";
-import "react-date-range/dist/styles.css";
-import "react-date-range/dist/theme/default.css";
-
-// ปุ่ม Custom
-const Button = ({ children, className = "", ...props }) => (
-  <button
-    className={`px-3 py-2 rounded-md border border-[rgba(254,253,253,0.5)] text-white hover:bg-[rgba(255,255,255,0.1)] transition ${className}`}
-    {...props}
-  >
-    {children}
-  </button>
-);
-
-// Card 
-const Card = ({ title, children }) => (
-  <div className="border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl p-6 text-white relative z-10">
-    <h2 className="text-lg font-semibold mb-4">{title}</h2>
-    {children}
-  </div>
-);
-
-// Table 
-const Table = ({ headers, children }) => (
-  <div className="overflow-x-auto">
-    <table className="min-w-full border-collapse text-gray-300 text-sm">
-      <thead>
-        <tr className="border-b border-gray-500/30 text-left">
-          {headers.map((h, i) => (
-            <th key={i} className="py-2 px-4 font-medium">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>{children}</tbody>
-    </table>
-  </div>
-);
-
-// Pagination Component
-const PaginationControls = ({ totalItems, itemsPerPage, currentPage, setCurrentPage }) => {
-  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
-
-  return (
-    <div className="flex justify-end items-center mt-4 text-sm text-gray-400 gap-3">
-      <span>
-        {totalItems === 0
-          ? "1–0 of 0"
-          : `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(
-              currentPage * itemsPerPage,
-              totalItems
-            )} of ${totalItems}`}
-      </span>
-      <button
-        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-        disabled={currentPage === 1}
-        className="p-1 rounded-md hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-40 transition"
-      >
-        <ChevronLeft size={18} />
-      </button>
-      <button
-        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-        disabled={currentPage === totalPages}
-        className="p-1 rounded-md hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-40 transition"
-      >
-        <ChevronRight size={18} />
-      </button>
-    </div>
-  );
-};
-
-// Tooltip Info
-const InfoTooltip = ({ text }) => {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative inline-block">
-      <Info
-        className="w-5 h-5 text-gray-300 cursor-pointer ml-2"
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-      />
-      {show && (
-        <div className="absolute top-0 left-full ml-2 w-64 bg-black/80 text-white text-xs p-2 rounded shadow-lg z-10">
-          {text}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default function ContactsReport() {
-  const defaultStart = calenderData?.[calenderData.length - 5]?.date || "2025-10-26";
-  const defaultEnd = calenderData?.[calenderData.length - 1]?.date || "2025-11-02";
-
+export default function ContactsChannelsReport() {
+  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const [range, setRange] = useState([
-    { startDate: new Date(defaultStart), endDate: new Date(defaultEnd), key: "selection" },
+    { startDate: thirtyDaysAgo, endDate: new Date(), key: "selection" },
   ]);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const calendarRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
-  // 🟢 [BACKEND NOTE]: สร้าง State สำหรับเก็บข้อมูลที่ได้จาก API
-  const [chartData, setChartData] = useState([]);
-  const [addedLogs, setAddedLogs] = useState([]);
-  const [deletedLogs, setDeletedLogs] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // Fetch both APIs
+  const { data: contactData, isLoading: contactLoading } = useReportData("/api/reports/contacts", range);
+  const { data: channelData, isLoading: channelLoading } = useReportData("/api/reports/channels", range);
 
-  // Pagination states
-  const [addedCurrentPage, setAddedCurrentPage] = useState(1);
-  const [deletedCurrentPage, setDeletedCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  if (contactLoading || channelLoading) return <ReportSkeleton />;
 
-  // 🟢 [BACKEND NOTE]: useEffect นี้จะยิง API ทุกครั้งที่ผู้ใช้เปลี่ยนวันที่
-  useEffect(() => {
-    const fetchReportData = async () => {
-      setIsLoading(true);
-      try {
-        const startDate = range[0].startDate.toISOString();
-        const endDate = range[0].endDate.toISOString();
+  // Contact data
+  const contactChartData = contactData?.chartData || [];
+  const channelDist = contactData?.channelDistribution || [];
+  const recentContacts = contactData?.recentContacts || [];
+  const contactStats = contactData?.stats || {};
 
-        // 🟢 โค้ดตัวอย่างการเรียก API จริง:
-        // const response = await fetch(`/api/reports/contacts?start=${startDate}&end=${endDate}`);
-        // const data = await response.json();
-        // setChartData(data.charts);
-        // setAddedLogs(data.addedLogs);
-        // setDeletedLogs(data.deletedLogs);
+  // Channel data
+  const channels = channelData?.channelData || [];
+  const trendData = channelData?.trendData || [];
+  const platforms = channelData?.platforms || [];
+  const platformDist = channelData?.platformDistribution || [];
+  const channelStats = channelData?.stats || {};
 
-        // [Mock Processing] กรองข้อมูลจำลองระหว่างรอ Backend
-        const filteredMock = calenderData
-            .filter((d) => {
-            const dDate = new Date(d.date);
-            const s = range[0].startDate;
-            const e = range[0].endDate;
-            e.setHours(23, 59, 59, 999);
-            return dDate >= s && dDate <= e;
-            })
-            .map((d) => ({
-            ...d,
-            totalContacts: d.opened + d.closed,
-            displayDate: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-            }));
-        setChartData(filteredMock);
-        
-        // จำลอง Log ว่างๆ
-        setAddedLogs([]);
-        setDeletedLogs([]);
+  // Color helpers
+  const coloredChannelDist = channelDist.map((ch) => ({
+    ...ch,
+    color: PLATFORM_COLORS[ch.name] || CHART_COLORS.purple,
+  }));
 
-      } catch (error) {
-        console.error("Error fetching report data", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const coloredPlatformDist = platformDist.map((p) => ({
+    ...p,
+    color: PLATFORM_COLORS[p.name] || CHART_COLORS.purple,
+  }));
 
-    fetchReportData();
-  }, [range]); // ทำงานใหม่เมื่อ range เปลี่ยน
+  const platformAreaColors = {};
+  platforms.forEach((p, i) => {
+    platformAreaColors[p] = PLATFORM_COLORS[p] || Object.values(CHART_COLORS)[i % Object.values(CHART_COLORS).length];
+  });
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target)) setShowCalendar(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const chartFontSize = "12px";
-
-  // คำนวณสรุปผลจาก Data
-  const totalAdded = chartData.reduce((sum, d) => sum + d.opened, 0);
-  const totalDeleted = chartData.reduce((sum, d) => sum + d.closed, 0);
-  const totalContacts = totalAdded + totalDeleted;
-
-  const addedPercent = totalContacts > 0 ? ((totalAdded / totalContacts) * 100).toFixed(2) : "0.00";
-  const deletedPercent = totalContacts > 0 ? ((totalDeleted / totalContacts) * 100).toFixed(2) : "0.00";
-
-  const blockClass =
-    "border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl p-6 pb-8 flex flex-col h-full";
-
-  const formatDateText = (date) =>
-    new Date(date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-
+  const paginatedContacts = recentContacts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
-    <div className="bg-[rgba(32,41,59,0.25)] backdrop-blur-xl rounded-3xl shadow-2xl p-8 text-white space-y-8">
-      {/* Calendar */}
-      <div className="relative mb-6" ref={calendarRef}>
-        <Button
-          onClick={() => setShowCalendar((s) => !s)}
-          className="flex items-center gap-2 text-white"
-        >
-          <Calendar size={16} /> {formatDateText(range[0].startDate)} - {formatDateText(range[0].endDate)}
-        </Button>
+    <ReportPageWrapper
+      title="Contacts"
+      subtitle="Customer Acquisition Analytics"
+      icon={Users}
+      headerActions={<ReportDatePicker range={range} setRange={setRange} />}
+      kpiCards={
+        <>
+          <StatsCard label="New Contacts" value={contactStats.totalNew || 0} icon={UserPlus} color="#4ade80" subtitle={`${contactChartData.length} days`} />
+          <StatsCard label="Active Returning" value={contactStats.activeReturning || 0} icon={UserCheck} color="#60a5fa" subtitle="engaged this period" />
+          <StatsCard label="Top Channel" value={contactStats.topChannel || "-"} icon={MessageCircle} color="#22d3ee" subtitle="most acquisitions" />
+        </>
+      }
+    >
 
-        {showCalendar && (
-          <div className="absolute top-10 z-20">
-            <div className="transform scale-75 origin-top-left">
-              <DateRange
-                editableDateInputs={true}
-                onChange={(item) => setRange([item.selection])}
-                moveRangeOnFirstSelection={false}
-                ranges={range}
-                rangeColors={["#8B5CF6"]}
-              />
-              <Button
-                onClick={() => setShowCalendar(false)}
-                className="mt-2 w-full flex justify-center items-center bg-purple-400 text-white"
-              >
-                Done
-              </Button>
-            </div>
-          </div>
-        )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <ReportCard title="New Contacts Trend" tooltip="จำนวนลูกค้าใหม่ที่เข้ามาในแต่ละวัน" className="xl:col-span-2">
+          <ChartContainer height={300}>
+            {contactChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={contactChartData}>
+                  <defs>
+                    <linearGradient id="gradientContacts" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.green} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.green} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="displayDate" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+                  <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="newContacts" name="New Contacts" stroke={CHART_COLORS.green} strokeWidth={2.5} fillOpacity={1} fill="url(#gradientContacts)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : <EmptyState title="No contact data" subtitle="No new contacts in selected range" />}
+          </ChartContainer>
+        </ReportCard>
+
+        <ReportCard title="Acquisition by Channel" tooltip="สัดส่วนลูกค้าใหม่แยกตามช่องทาง">
+          <ChartContainer height={300}>
+            {coloredChannelDist.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height="65%">
+                  <PieChart>
+                    <Pie data={coloredChannelDist} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" stroke="none">
+                      {coloredChannelDist.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-2 mt-2">
+                  {coloredChannelDist.map((ch, i) => {
+                    const total = coloredChannelDist.reduce((s, c) => s + c.value, 0);
+                    const pct = total > 0 ? ((ch.value / total) * 100).toFixed(0) : "0";
+                    return (
+                      <div key={i} className="flex items-center justify-between px-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
+                          <span className="text-white/50 text-xs font-medium">{ch.name}</span>
+                        </div>
+                        <span className="text-white font-bold text-xs">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : <EmptyState title="No channel data" />}
+          </ChartContainer>
+        </ReportCard>
       </div>
 
-      {/* Contacts Overview */}
-      <div className={`${blockClass} w-full`}>
-        <h2 className="text-lg font-semibold flex items-center mb-4">
-          Contacts Overview <InfoTooltip text="จำนวนผู้ติดต่อทั้งหมดในช่วงเวลาที่เลือก" />
-        </h2>
 
-        <div className="flex justify-start space-x-12 mb-6">
-          <div>
-            <span className="text-lg font-semibold mb-1 block">Contacts Added</span>
-            <div className="flex items-center space-x-2">
-              <span className="text-2xl font-semibold text-white">{totalAdded}</span>
-              <span className="text-sm text-gray-400">{addedPercent}%</span>
-            </div>
-          </div>
-          <div>
-            <span className="text-lg font-semibold mb-1 block">Contacts Deleted</span>
-            <div className="flex items-center space-x-2">
-              <span className="text-2xl font-semibold text-white">{totalDeleted}</span>
-              <span className="text-sm text-gray-400">{deletedPercent}%</span>
-            </div>
-          </div>
-        </div>
 
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#555" />
-            <XAxis dataKey="displayDate" stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <YAxis stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <Tooltip labelStyle={{ fontSize: chartFontSize }} itemStyle={{ fontSize: chartFontSize }} />
-            <Line type="monotone" dataKey="totalContacts" stroke="#fbbf24" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="opened" stroke="#4ade80" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="closed" stroke="#60a5fa" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Contacts Added Chart */}
-      <div className={`${blockClass} w-full`}>
-        <h2 className="text-lg font-semibold flex items-center mb-4">
-          Contacts Added <InfoTooltip text="จำนวนผู้ติดต่อที่ถูกเพิ่มใหม่ในช่วงเวลาที่เลือก" />
-        </h2>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#555" />
-            <XAxis dataKey="displayDate" stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <YAxis stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <Tooltip labelStyle={{ fontSize: chartFontSize }} itemStyle={{ fontSize: chartFontSize }} />
-            <Line type="monotone" dataKey="opened" stroke="#4ade80" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Contacts Deleted Chart */}
-      <div className={`${blockClass} w-full`}>
-        <h2 className="text-lg font-semibold flex items-center mb-4">
-          Contacts Deleted <InfoTooltip text="จำนวนผู้ติดต่อที่ถูกลบออกในช่วงเวลาที่เลือก" />
-        </h2>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#555" />
-            <XAxis dataKey="displayDate" stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <YAxis stroke="#ccc" style={{ fontSize: chartFontSize }} />
-            <Tooltip labelStyle={{ fontSize: chartFontSize }} itemStyle={{ fontSize: chartFontSize }} />
-            <Line type="monotone" dataKey="closed" stroke="#60a5fa" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Contact Added Log */}
-      <Card title="Contact Added Log">
-        <Table headers={["Timestamp", "Contact ID", "Contact Name", "Channel"]}>
-          {addedLogs.length > 0 ? (
-            addedLogs.map((log, index) => (
-                <tr key={index} className="border-b border-gray-500/30">
-                    <td className="py-3 px-4">{log.timestamp}</td>
-                    <td className="py-3 px-4">{log.contactId}</td>
-                    <td className="py-3 px-4">{log.contactName}</td>
-                    <td className="py-3 px-4">{log.channel}</td>
-                </tr>
+      <ReportCard
+        title="New Customer Log"
+        tooltip="รายละเอียดลูกค้าใหม่ในช่วงที่เลือก"
+        actions={<ExportCSVButton data={recentContacts} filename="contacts_report" />}
+      >
+        <ReportTable headers={["Customer", "Email", "Channel", "Company", "Date"]}>
+          {paginatedContacts.length > 0 ? (
+            paginatedContacts.map((row, i) => (
+              <ReportTableRow key={i}>
+                <ReportTableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[#BE7EC7]/15 flex items-center justify-center text-[#BE7EC7] text-xs font-black">
+                      {row.name?.charAt(0).toUpperCase() || "?"}
+                    </div>
+                    <span className="text-white font-bold text-sm">{row.name}</span>
+                  </div>
+                </ReportTableCell>
+                <ReportTableCell><span className="text-white/50">{row.email || "—"}</span></ReportTableCell>
+                <ReportTableCell><StatusBadge text={row.channel} color={PLATFORM_COLORS[row.channel] || CHART_COLORS.blue} /></ReportTableCell>
+                <ReportTableCell><span className="text-white/50">{row.company || "—"}</span></ReportTableCell>
+                <ReportTableCell><span className="text-white/40 text-xs">{row.displayDate}</span></ReportTableCell>
+              </ReportTableRow>
             ))
-          ) : (
-            <tr>
-                <td colSpan={4} className="text-center py-6 text-gray-400">
-                No Available Data
-                </td>
-            </tr>
-          )}
-        </Table>
-        <PaginationControls
-          totalItems={addedLogs.length}
-          itemsPerPage={itemsPerPage}
-          currentPage={addedCurrentPage}
-          setCurrentPage={setAddedCurrentPage}
-        />
-      </Card>
-
-      {/* Contact Deleted Log */}
-      <Card title="Contact Deleted Log">
-        <Table headers={["Timestamp", "Contact ID", "Contact Name", "Channel"]}>
-          {deletedLogs.length > 0 ? (
-             deletedLogs.map((log, index) => (
-                <tr key={index} className="border-b border-gray-500/30">
-                    <td className="py-3 px-4">{log.timestamp}</td>
-                    <td className="py-3 px-4">{log.contactId}</td>
-                    <td className="py-3 px-4">{log.contactName}</td>
-                    <td className="py-3 px-4">{log.channel}</td>
-                </tr>
-            ))
-          ) : (
-            <tr>
-                <td colSpan={4} className="text-center py-6 text-gray-400">
-                No Available Data
-                </td>
-            </tr>
-          )}
-        </Table>
-        <PaginationControls
-          totalItems={deletedLogs.length}
-          itemsPerPage={itemsPerPage}
-          currentPage={deletedCurrentPage}
-          setCurrentPage={setDeletedCurrentPage}
-        />
-      </Card>
-    </div>
+          ) : null}
+        </ReportTable>
+        <ReportPagination totalItems={recentContacts.length} itemsPerPage={itemsPerPage} currentPage={currentPage} setCurrentPage={setCurrentPage} />
+      </ReportCard>
+    </ReportPageWrapper>
   );
 }

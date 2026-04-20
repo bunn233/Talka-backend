@@ -22,23 +22,21 @@ export default function DashboardConversation() {
   useEffect(() => {
     if (!isMounted) return;
     
-    setIsLoading(true);
-    const allChartDataMock = {
-        'Today': [
-          { time: '00:00', opened: 2, closed: 1 }, { time: '04:00', opened: 4, closed: 2 }, 
-          { time: '08:00', opened: 12, closed: 5 }, { time: '12:00', opened: 8, closed: 10 }, 
-          { time: '16:00', opened: 15, closed: 12 }, { time: '20:00', opened: 6, closed: 14 }, 
-          { time: '23:59', opened: 2, closed: 4 }
-        ],
-        'Yesterday': [
-            { time: '00:00', opened: 5, closed: 2 }, { time: '12:00', opened: 18, closed: 10 }, { time: '23:59', opened: 3, closed: 8 }
-        ],
+    const fetchChartData = async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`/api/dashboard/conversations?period=${encodeURIComponent(selectedOption)}`);
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+        setCurrentData(data);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error fetching chart data:", error);
+        setIsLoading(false);
+      }
     };
-
-    setTimeout(() => {
-      setCurrentData(allChartDataMock[selectedOption] || allChartDataMock['Today']);
-      setIsLoading(false);
-    }, 600);
+    
+    fetchChartData();
   }, [selectedOption, isMounted]);
 
   const totals = useMemo(() => {

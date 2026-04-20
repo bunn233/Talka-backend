@@ -2,16 +2,25 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { 
   Home, Save, Globe, Clock, Monitor, ShieldCheck, 
-  Settings2, Plus, Users, MessageSquare, AlertCircle, Trash2, Camera
+  Settings2, Plus, Users, MessageSquare, AlertCircle, Trash2, Camera, X, CheckCircle
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 function GeneralInfoContent() {
   const [workspaceId, setWorkspaceId] = useState(null);
   const [workspaceName, setWorkspaceName] = useState("");
+  const [logo, setLogo] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const [timeout, setTimeoutValue] = useState(30);
   const [timezone, setTimezone] = useState("(GMT+07:00) Asia/Bangkok");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [popup, setPopup] = useState({
+    show: false,
+    message: "",
+    success: false,
+  });
+  const closePopup = () => setPopup((p) => ({ ...p, show: false }));
   
   const [usage, setUsage] = useState({
     users: 0,
@@ -45,9 +54,12 @@ function GeneralInfoContent() {
 
         if (data.success) {
             setWorkspaceName(data.workspace.name);
+            if (data.workspace.logo) setLogo(data.workspace.logo);
+            setUserRole(data.userRole);
             setUsage(prev => ({
                 ...prev,
-                users: data.workspace._count.members 
+                users: data.workspace._count.members,
+                messages: data.monthlyChats || 0
             }));
         } else {
             console.error(data.error);
@@ -72,23 +84,51 @@ function GeneralInfoContent() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
                 wsId: workspaceId, 
-                name: workspaceName 
+                name: workspaceName,
+                logo: logo 
             })
         });
 
         const data = await res.json();
         
         if (data.success) {
-            alert("✅ Configuration updated successfully!");
+            setPopup({ show: true, message: "Configuration updated successfully!", success: true });
+            setTimeout(() => setPopup(p => ({ ...p, show: false })), 2000);
             window.dispatchEvent(new Event("user_updated"));
         } else {
-            alert(`❌ Error: ${data.error}`);
+            setPopup({ show: true, message: `Error: ${data.error}`, success: false });
+            setTimeout(() => setPopup(p => ({ ...p, show: false })), 2000);
         }
     } catch (error) {
         console.error("Save Error:", error);
-        alert("❌ Failed to update workspace.");
+        setPopup({ show: true, message: "Failed to update workspace.", success: false });
+        setTimeout(() => setPopup(p => ({ ...p, show: false })), 2000);
     } finally {
         setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!workspaceId) return;
+    if (confirm("Are you sure you want to delete this workspace? This action cannot be undone.")) {
+      try {
+        const res = await fetch("/api/workspaces/general", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wsId: workspaceId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            setPopup({ show: true, message: "Workspace deleted successfully.", success: true });
+            setTimeout(() => { window.location.href = "/"; }, 2000);
+        } else {
+            setPopup({ show: true, message: `Error: ${data.error}`, success: false });
+            setTimeout(() => setPopup(p => ({ ...p, show: false })), 2000);
+        }
+      } catch (e) {
+        setPopup({ show: true, message: "Failed to delete workspace.", success: false });
+        setTimeout(() => setPopup(p => ({ ...p, show: false })), 2000);
+      }
     }
   };
 
@@ -136,11 +176,25 @@ function GeneralInfoContent() {
               
               <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-10">
                 <div className="relative group">
-                  <div className="w-32 h-32 rounded-[2.5rem] bg-[#1F192E] border-2 border-dashed border-white/10 flex flex-col items-center justify-center overflow-hidden group-hover:border-[#BE7EC7]/50 transition-all cursor-pointer relative">
-                    <Camera size={28} className="text-white/10 group-hover:text-[#BE7EC7] transition-colors mb-2" />
-                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest">Upload Logo</span>
+                  <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setLogo(reader.result);
+                      reader.readAsDataURL(file);
+                    }
+                  }} />
+                  <div className="w-32 h-32 rounded-[2.5rem] bg-[#1F192E] border-2 border-dashed border-white/10 flex flex-col items-center justify-center overflow-hidden group-hover:border-[#BE7EC7]/50 transition-all relative">
+                    {logo ? (
+                      <img src={logo} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <Camera size={28} className="text-white/10 group-hover:text-[#BE7EC7] transition-colors mb-2" />
+                        <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest">Upload Logo</span>
+                      </>
+                    )}
                     {/* Hover Overlay */}
-                    <div className="absolute inset-0 bg-[#BE7EC7]/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="absolute inset-0 bg-[#BE7EC7]/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                        <Plus size={24} className="text-[#BE7EC7]" />
                     </div>
                   </div>
@@ -259,22 +313,24 @@ function GeneralInfoContent() {
             </section>
 
             {/* 4. Danger Zone */}
-            <section className="mt-20">
-              <div className="flex items-center gap-3 mb-4">
-                <AlertCircle size={18} className="text-red-500" />
-                <h3 className="text-xs font-black text-red-500/80 uppercase tracking-[0.3em]">Danger Zone</h3>
-              </div>
-              
-              <div className="p-8 bg-red-500/[0.03] border border-red-500/10 rounded-[2.5rem] flex flex-col sm:flex-row justify-between items-center gap-6">
-                <div className="text-center sm:text-left">
-                  <h4 className="text-sm font-bold text-red-400">Delete this workspace</h4>
-                  <p className="text-xs text-white/30 mt-1 max-w-xs">Once deleted, all teams, chats, and historical data will be removed permanently.</p>
+            {userRole?.toLowerCase() === 'owner' && (
+              <section className="mt-20">
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertCircle size={18} className="text-red-500" />
+                  <h3 className="text-xs font-black text-red-500/80 uppercase tracking-[0.3em]">Danger Zone</h3>
                 </div>
-                <button className="px-6 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all text-[11px] font-black uppercase tracking-widest border border-red-500/20 shadow-lg shadow-red-500/5">
-                  <Trash2 size={14} className="inline mr-2" /> Delete Workspace
-                </button>
-              </div>
-            </section>
+                
+                <div className="p-8 bg-red-500/[0.03] border border-red-500/10 rounded-[2.5rem] flex flex-col sm:flex-row justify-between items-center gap-6">
+                  <div className="text-center sm:text-left">
+                    <h4 className="text-sm font-bold text-red-400">Delete this workspace</h4>
+                    <p className="text-xs text-white/30 mt-1 max-w-xs">Once deleted, all teams, chats, and historical data will be removed permanently.</p>
+                  </div>
+                  <button onClick={handleDelete} className="px-6 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all text-[11px] font-black uppercase tracking-widest border border-red-500/20 shadow-lg shadow-red-500/5 cursor-pointer z-10">
+                    <Trash2 size={14} className="inline mr-2" /> Delete Workspace
+                  </button>
+                </div>
+              </section>
+            )}
 
             {/* Save Changes Floating Bar Effect */}
             <div className="flex justify-end pt-8 border-t border-white/5">
@@ -294,6 +350,23 @@ function GeneralInfoContent() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {popup.show && (
+          <motion.div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[100]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className={`relative w-[400px] min-h-[280px] bg-white/90 backdrop-blur-xl border border-white/60 shadow-2xl rounded-3xl p-8 flex flex-col justify-center items-center gap-6 text-center ${popup.success ? "shadow-purple-500/20" : "shadow-red-500/20"}`} initial={{ scale: 0.8, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, y: 20, opacity: 0 }}>
+              <button className="absolute top-4 right-4 text-gray-400 hover:text-gray-600" onClick={closePopup}><X size={20} /></button>
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg mb-2 ${popup.success ? "bg-green-100 text-green-600" : "bg-red-100 text-red-500"}`}>
+                {popup.success ? <CheckCircle size={48} strokeWidth={2.5} /> : <AlertCircle size={48} strokeWidth={2.5} />}
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-gray-800">{popup.success ? "Success!" : "Failed"}</h2>
+                <p className="text-gray-500 font-medium">{popup.message}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

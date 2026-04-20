@@ -21,7 +21,7 @@ export async function POST(req) {
       orderBy: { channel_id: "desc" },
     });
 
-    if (!channel) return new Response("Config Error", { status: 404 });
+    //if (!channel) return new Response("Config Error", { status: 404 });
 
     // 2. ถอดรหัส Secret ก่อนเอาไปคำนวณ Hmac
     const realChannelSecret = decryptToken(channel.line_channel_secret);
