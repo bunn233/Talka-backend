@@ -10,20 +10,21 @@ export default function DashboardContacts() {
     const fetchContacts = async () => {
       try {
         setIsLoading(true);
-        const mockData = [
-          { id: 1, name: "Alice Johnson", channel: "Facebook", status: "Open", tags: ["VIP"], imgUrl: "https://ui-avatars.com/api/?name=Alice+J&background=BE7EC7&color=fff" },
-          { id: 2, name: "Bob Smith", channel: "Line", status: "Pending", tags: [], imgUrl: "https://ui-avatars.com/api/?name=Bob+S&background=4ade80&color=fff" },
-          { id: 3, name: "Charlie Brown", channel: "Facebook", status: "New Chat", tags: ["Hot Lead"], imgUrl: "https://ui-avatars.com/api/?name=Charlie+B&background=60a5fa&color=fff" },
-          { id: 4, name: "David Miller", channel: "Line", status: "Open", tags: ["Support"], imgUrl: "https://ui-avatars.com/api/?name=David+M&background=fb7185&color=fff" }
-        ];
-        setTimeout(() => { setContacts(mockData); setIsLoading(false); }, 600);
-      } catch (error) { setIsLoading(false); }
+        const res = await fetch("/api/dashboard/contacts");
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+        setContacts(data);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error fetching contacts:", error);
+        setIsLoading(false); 
+      }
     };
     fetchContacts();
   }, []);
 
   return (
-    <div className="bg-[#161223] border border-white/5 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-7 h-[550px] w-full flex flex-col overflow-hidden">
+    <div className="bg-[#161223] border border-white/5 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-7 h-[600px] w-full flex flex-col overflow-hidden">
       
       {/* Header Section */}
       <div className="flex items-center justify-between mb-7 shrink-0 px-1">
@@ -42,16 +43,16 @@ export default function DashboardContacts() {
       </div>
       
       {/* List Section */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+      <div className="flex-1 flex flex-col gap-3 overflow-hidden">
         {isLoading ? (
              <div className="space-y-3 animate-pulse">
                 {[1,2,3,4].map(i => <div key={i} className="h-[84px] bg-white/5 rounded-3xl w-full"></div>)}
              </div>
         ) : (
-          contacts.map((contact) => (
+          contacts.slice(0, 4).map((contact) => (
             <div 
               key={contact.id} 
-              className="group relative flex items-center justify-between p-4 bg-[#1F192E] border border-white/[0.03] rounded-[1.8rem] hover:bg-[#251E38] hover:border-[#BE7EC7]/30 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-xl"
+              className="group relative flex items-center justify-between p-4 bg-[#1F192E] border border-white/[0.03] rounded-[1.8rem] hover:bg-[#251E38] hover:border-[#BE7EC7]/30 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-xl flex-1 max-h-[84px]"
             >
               {/* Highlight Bar on Hover */}
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 group-hover:h-8 bg-[#BE7EC7] rounded-r-full transition-all duration-300"></div>
@@ -64,7 +65,7 @@ export default function DashboardContacts() {
                       className="w-14 h-14 rounded-2xl border-2 border-white/5 object-cover shadow-lg group-hover:scale-105 transition-transform duration-300" 
                       alt={contact.name}
                     />
-                    <span className={`absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-full border-[3px] border-[#1F192E] group-hover:border-[#251E38] transition-colors ${contact.status === 'Open' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}></span>
+                    <span className={`absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-full border-[3px] border-[#1F192E] group-hover:border-[#251E38] transition-colors ${contact.status?.toLowerCase() === 'open' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}></span>
                 </div>
 
                 {/* Info */}
@@ -79,7 +80,7 @@ export default function DashboardContacts() {
                   </div>
                   <div className="flex items-center gap-3 mt-1.5">
                     <div className="flex items-center gap-1.5">
-                        {contact.channel === 'Facebook' ? <Facebook size={12} className="text-blue-400" /> : <MessageCircle size={12} className="text-green-400" />}
+                        {contact.channel?.toLowerCase() === 'facebook' ? <Facebook size={12} className="text-blue-400" /> : <MessageCircle size={12} className="text-green-400" />}
                         <span className="text-white/30 text-[10px] font-bold uppercase tracking-widest">{contact.channel}</span>
                     </div>
                     <div className="w-1 h-1 rounded-full bg-white/10"></div>

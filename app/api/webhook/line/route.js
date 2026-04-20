@@ -12,7 +12,7 @@ export async function POST(req) {
       orderBy: { channel_id: "desc" },
     });
 
-    if (!channel) return new Response("Config Error", { status: 404 });
+    //if (!channel) return new Response("Config Error", { status: 404 });
 
     const hash = crypto
       .createHmac("sha256", channel.line_channel_secret)

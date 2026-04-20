@@ -28,6 +28,7 @@ model AiAgent {
 model Workspace {
   workspace_id  Int               @id @default(autoincrement())
   name          String            // ชื่อ Workspace เช่น "บริษัท A", "ร้านขายเสื้อผ้า"
+  logo          String?           @db.LongText // รูปโลโก้ (Base64)
   created_at    DateTime          @default(now())
 
   members       WorkspaceMember[]
