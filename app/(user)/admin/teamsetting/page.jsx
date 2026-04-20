@@ -84,16 +84,26 @@ function TeamModal({
                             {userOptions.map((user) => (
                                 <label
                                     key={user.id}
-                                    className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all mb-1 last:mb-0 ${teamMembers.includes(user.name) ? 'bg-[#BE7EC7]/10' : 'hover:bg-white/5'}`}
+                                    className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all mb-1 last:mb-0 ${
+                                        user.isMe 
+                                            ? 'bg-[#BE7EC7]/15 border border-[#BE7EC7]/30' 
+                                            : teamMembers.includes(user.name) 
+                                            ? 'bg-[#BE7EC7]/10' 
+                                            : 'hover:bg-white/5'
+                                    }`}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-xs font-bold text-white/40 uppercase">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold uppercase ${
+                                            user.isMe 
+                                                ? 'bg-[#BE7EC7]/30 text-[#BE7EC7]' 
+                                                : 'bg-white/10 text-white/40'
+                                        }`}>
                                             {user.name.substring(0, 2)}
                                         </div>
-                                        <div className="flex flex-col">
+                                        <div className="flex flex-col flex-1">
                                             <span className="text-sm font-bold flex items-center gap-2">
                                                 {user.name}
-                                                {user.isMe && <span className="bg-[#BE7EC7] text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-tighter">You</span>}
+                                                {user.isMe && <span className="bg-gradient-to-r from-[#BE7EC7] to-[#d99fe8] text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider shadow-lg shadow-[#BE7EC7]/30">You</span>}
                                             </span>
                                             <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">{user.role}</span>
                                         </div>
@@ -167,26 +177,51 @@ export default function TeamSettingPage() {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        if (session) {
+            fetchData();
+        }
+    }, [session, isAddOpen]);
 
     const fetchData = async () => {
         try {
             setIsLoaded(false);
-            // ดึงรายชื่อ users
-            const usersResponse = await fetch("/api/users");
+            
+            // ดึงข้อมูล workspace current ก่อน
+            const wsRes = await fetch("/api/users/current-workspace");
+            const wsData = await wsRes.json();
+            const workspaceId = wsData.activeWorkspaceId;
+            
+            // ดึงรายชื่อ users จาก workspace members (เพื่อให้ได้ workspace-level role)
+            const usersResponse = await fetch(`/api/workspaces/members?wsId=${workspaceId}`);
             if (usersResponse.ok) {
                 const users = await usersResponse.json();
+                
+                // สร้าง current user object
                 const currentUser = session?.user ? {
                     id: session.user.id,
                     name: session.user.name,
-                    role: session.user.role,
+                    email: session.user.email,
+                    role: users.find(u => u.email === session.user.email)?.role || session.user.role || "EMPLOYEE",
                     isMe: true
                 } : null;
+                
+                console.log("=== Team Setting Debug ===");
+                console.log("Session:", session?.user);
+                console.log("Current User:", currentUser);
+                console.log("All Users from API:", users);
+                
+                // Filter out current user from the list (ใช้ id เป็น primary key)
                 const otherUsers = users
-                    .filter(u => !currentUser || u.email !== session.user.email)
-                    .map(u => ({ id: u.id, name: u.name, role: u.role, isMe: false }));
-                setUserOptions(currentUser ? [currentUser, ...otherUsers] : otherUsers);
+                    .filter(u => !currentUser || (u.id !== currentUser.id && u.email !== currentUser.email))
+                    .map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role || "EMPLOYEE", isMe: false }));
+                
+                const finalList = currentUser ? [currentUser, ...otherUsers] : otherUsers;
+                console.log("Final User Options:", finalList);
+                console.log("========================");
+                
+                setUserOptions(finalList);
+            } else {
+                throw new Error(`Failed to fetch users: ${usersResponse.status}`);
             }
             
             // ดึงทีมทั้งหมด

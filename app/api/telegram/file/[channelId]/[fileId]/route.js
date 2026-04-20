@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { decryptToken } from "@/lib/encryption";
 
 export async function GET(req, context) {
     try {
@@ -13,7 +14,8 @@ export async function GET(req, context) {
             return new Response("Not found", { status: 404 });
         }
 
-        const token = channel.telegram_bot_token;
+        //  2. ถอดรหัส Token ให้อ่านออกก่อน
+        const token = decryptToken(channel.telegram_bot_token);
 
         const fileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
         const fileData = await fileRes.json();

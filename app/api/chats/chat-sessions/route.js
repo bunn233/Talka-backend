@@ -94,6 +94,7 @@ export async function GET(req) {
                 board_column_id: chat.board_column_id || "col-1", 
                 name: chat.customer?.name || "Unknown User",
                 imgUrl: chat.customer?.image || null,
+                channelName: chat.channel?.name || "",
                 phone: chat.customer?.phone || "",
                 email: chat.customer?.email || "",
                 country: chat.customer?.country || "",
@@ -110,10 +111,7 @@ export async function GET(req) {
                 lastMessage: lastMsg ? lastMsg.content : "ไม่มีข้อความ",
                 messages: allMessages.map(msg => ({
                     id: msg.message_id,
-                    // 🔥 บังคับให้แอดมินอยู่ฝั่งขวา
                     from: msg.sender_type === "AGENT" || msg.sender_type === "ADMIN" ? "me" : "customer",
-                    
-                    // 🔥 ส่ง 2 ค่านี้ให้ ChatMessage.jsx เอาไปแยกชื่อคนตอบได้แม่นยำ!
                     sender_type: msg.sender_type,
                     senderName: (msg.sender_type === "AGENT" || msg.sender_type === "ADMIN") 
                         ? (userMap[msg.sender_id] || "Agent") 

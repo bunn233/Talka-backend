@@ -11,6 +11,7 @@ export async function GET() {
       include: {
         customer: true,
         platform: true,
+        channel: true, 
         messages: { orderBy: { created_at: "asc" } },
         _count: {
           select: {
@@ -37,6 +38,8 @@ export async function GET() {
       imgUrl: chat.customer?.image,
       status: chat.status,
       platform: chat.platform?.platform_name || "UNKNOWN",
+      channelName: chat.channel?.name || "", 
+
       workspaceId: chat.channel?.workspace_id || chat.platform?.workspace_id,
       lastMessage: chat.messages[chat.messages.length - 1]?.content || "No messages",
       unreadCount: chat._count.messages,
