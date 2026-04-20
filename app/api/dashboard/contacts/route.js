@@ -11,7 +11,7 @@ export async function GET() {
       orderBy: { start_time: 'desc' }, // เรียงจากคนทักมาล่าสุด
       include: {
         customer: true,
-        platform: true,
+        channel: true,
         tags: {
           include: { tag: true }
         }
@@ -22,7 +22,7 @@ export async function GET() {
     const formattedContacts = recentChats.map(chat => ({
       id: chat.chat_session_id,
       name: chat.customer.name,
-      channel: chat.platform.platform_name, // เช่น Facebook, Line
+      channel: chat.channel.platform_name, // เช่น Facebook, Line
       status: chat.status, // OPEN, PENDING, CLOSED 
       tags: chat.tags.map(ct => ct.tag.tag_name), // แกะเอาเฉพาะชื่อแท็กออกมาเป็น Array
       imgUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.customer.name)}&background=random`

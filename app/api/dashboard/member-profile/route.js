@@ -47,34 +47,30 @@ export async function GET(req) {
     const u = membership.user;
 
     // --- Stats ---
-    const [totalAssigned, resolvedCount, openCount] = await Promise.all([
-      // Total chats ever assigned to this user
-      prisma.chatSession.count({
-        where: { assigned_user_id: u.user_id, channel: { workspace_id: wsId } },
-      }),
-      // Resolved/closed chats
-      prisma.chatSession.count({
-        where: {
-          assigned_user_id: u.user_id,
-          channel: { workspace_id: wsId },
-          status: { in: ["RESOLVED", "CLOSED"] },
-        },
-      }),
-      // Open chats
-      prisma.chatSession.count({
-        where: {
-          assigned_user_id: u.user_id,
-          channel: { workspace_id: wsId },
-          status: { in: ["OPEN", "PENDING", "NEW"] },
-        },
-      }),
-    ]);
+    // หาแชทที่สมาชิกมีส่วนเกี่ยวข้อง: ถูก assign ให้ หรือ เคยส่งข้อความในห้องนั้น (เป็น AGENT)
+    const chatsWithMessages = await prisma.chatSession.findMany({
+      where: {
+        channel: { workspace_id: wsId },
+        OR: [
+          { assigned_user_id: u.user_id },
+          { messages: { some: { sender_type: "AGENT", sender_id: u.user_id } } }
+        ]
+      },
+      select: { chat_session_id: true, status: true }
+    });
 
-    // Recent 5 chat sessions handled
+    const totalHandled = chatsWithMessages.length;
+    const resolvedCount = chatsWithMessages.filter(c => ["RESOLVED", "CLOSED"].includes(c.status)).length;
+    const openCount = chatsWithMessages.filter(c => ["OPEN", "PENDING", "NEW"].includes(c.status)).length;
+
+    // Recent 5 chat sessions ที่สมาชิกมีส่วนร่วม
     const recentSessions = await prisma.chatSession.findMany({
       where: {
-        assigned_user_id: u.user_id,
         channel: { workspace_id: wsId },
+        OR: [
+          { assigned_user_id: u.user_id },
+          { messages: { some: { sender_type: "AGENT", sender_id: u.user_id } } }
+        ]
       },
       include: {
         customer: { select: { name: true, image: true } },
@@ -100,10 +96,10 @@ export async function GET(req) {
         joinedAt: membership.joined_at,
         workspaceName: membership.workspace.name,
         stats: {
-          totalAssigned,
+          totalAssigned: totalHandled,
           resolved: resolvedCount,
           open: openCount,
-          resolutionRate: totalAssigned > 0 ? Math.round((resolvedCount / totalAssigned) * 100) : 0,
+          resolutionRate: totalHandled > 0 ? Math.round((resolvedCount / totalHandled) * 100) : 0,
         },
         recentSessions: recentSessions.map((s) => ({
           id: s.chat_session_id,

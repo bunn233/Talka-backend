@@ -9,9 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 function GeneralInfoContent() {
   const [workspaceId, setWorkspaceId] = useState(null);
   const [workspaceName, setWorkspaceName] = useState("");
-  const [logo, setLogo] = useState(null);
   const [userRole, setUserRole] = useState(null);
-  const [timeout, setTimeoutValue] = useState(30);
   const [timezone, setTimezone] = useState("(GMT+07:00) Asia/Bangkok");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,9 +24,7 @@ function GeneralInfoContent() {
     users: 0,
     maxUsers: 10,
     messages: 1420, 
-    maxMessages: 5000,
-    storage: 0.8, 
-    maxStorage: 2
+    maxMessages: 5000
   });
   
   useEffect(() => {
@@ -54,11 +50,11 @@ function GeneralInfoContent() {
 
         if (data.success) {
             setWorkspaceName(data.workspace.name);
-            if (data.workspace.logo) setLogo(data.workspace.logo);
             setUserRole(data.userRole);
             setUsage(prev => ({
                 ...prev,
                 users: data.workspace._count.members,
+                maxUsers: data.maxUsers || 10,
                 messages: data.monthlyChats || 0
             }));
         } else {
@@ -84,8 +80,7 @@ function GeneralInfoContent() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
                 wsId: workspaceId, 
-                name: workspaceName,
-                logo: logo 
+                name: workspaceName
             })
         });
 
@@ -174,33 +169,8 @@ function GeneralInfoContent() {
                 <h3 className={sectionTitleClass}>Branding & Identity</h3>
               </div>
               
-              <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-10">
-                <div className="relative group">
-                  <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onloadend = () => setLogo(reader.result);
-                      reader.readAsDataURL(file);
-                    }
-                  }} />
-                  <div className="w-32 h-32 rounded-[2.5rem] bg-[#1F192E] border-2 border-dashed border-white/10 flex flex-col items-center justify-center overflow-hidden group-hover:border-[#BE7EC7]/50 transition-all relative">
-                    {logo ? (
-                      <img src={logo} alt="Logo" className="w-full h-full object-cover" />
-                    ) : (
-                      <>
-                        <Camera size={28} className="text-white/10 group-hover:text-[#BE7EC7] transition-colors mb-2" />
-                        <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest">Upload Logo</span>
-                      </>
-                    )}
-                    {/* Hover Overlay */}
-                    <div className="absolute inset-0 bg-[#BE7EC7]/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                       <Plus size={24} className="text-[#BE7EC7]" />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex-1 space-y-4">
+              <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem]">
+                <div className="max-w-2xl space-y-4">
                   <div>
                     <label className={labelClass}>Workspace Display Name</label>
                     <div className="relative">
@@ -210,12 +180,13 @@ function GeneralInfoContent() {
                         value={workspaceName}
                         onChange={(e) => setWorkspaceName(e.target.value)}
                         placeholder="e.g. My Creative Agency"
-                        className={`${inputClass} pl-11`}
+                        className={`${inputClass} pl-11 ${userRole?.toLowerCase() !== 'owner' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={userRole?.toLowerCase() !== 'owner'}
                       />
                     </div>
                   </div>
                   <p className="text-xs text-white/30 leading-relaxed font-medium">
-                    This name and logo will be visible to all team members and used in outgoing communications.
+                    This name will be visible to all team members and used in outgoing communications.
                   </p>
                 </div>
               </div>
@@ -228,7 +199,7 @@ function GeneralInfoContent() {
                 <h3 className={sectionTitleClass}>Usage & Subscription</h3>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Users Limit */}
                 <div className="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
                   <div className="flex justify-between items-end mb-4">
@@ -257,19 +228,6 @@ function GeneralInfoContent() {
                   </div>
                 </div>
 
-                {/* Storage Limit */}
-                <div className="p-6 bg-white/[0.02] border border-white/5 rounded-[2rem]">
-                  <div className="flex justify-between items-end mb-4">
-                    <div className="flex items-center gap-2 text-white/40">
-                       <ShieldCheck size={14} />
-                       <span className="text-[10px] font-black uppercase">Data Storage</span>
-                    </div>
-                    <span className="text-xs font-bold text-white">{usage.storage}GB / {usage.maxStorage}GB</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.5)]" style={{ width: `${(usage.storage/usage.maxStorage)*100}%` }}></div>
-                  </div>
-                </div>
               </div>
             </section>
 
@@ -280,7 +238,7 @@ function GeneralInfoContent() {
                 <h3 className={sectionTitleClass}>Regional & Preferences</h3>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem]">
+              <div className="grid grid-cols-1 gap-6 p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem]">
                 <div>
                   <label className={labelClass}>Default Time Zone</label>
                   <div className="relative">
@@ -288,25 +246,13 @@ function GeneralInfoContent() {
                     <select
                       value={timezone}
                       onChange={(e) => setTimezone(e.target.value)}
-                      className={`${inputClass} pl-11 appearance-none cursor-pointer`}
+                      className={`${inputClass} pl-11 appearance-none ${userRole?.toLowerCase() !== 'owner' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      disabled={userRole?.toLowerCase() !== 'owner'}
                     >
                       <option value="(GMT+07:00) Asia/Bangkok" className="bg-[#1F192E]">Bangkok (GMT+07:00)</option>
                       <option value="(GMT+08:00) Singapore" className="bg-[#1F192E]">Singapore (GMT+08:00)</option>
                     </select>
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none text-[10px]">▼</div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className={labelClass}>Member Session Timeout (Min)</label>
-                  <div className="relative">
-                    <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-                    <input
-                      type="number"
-                      value={timeout}
-                      onChange={(e) => setTimeoutValue(e.target.value)}
-                      className={`${inputClass} pl-11`}
-                    />
                   </div>
                 </div>
               </div>
@@ -333,19 +279,21 @@ function GeneralInfoContent() {
             )}
 
             {/* Save Changes Floating Bar Effect */}
-            <div className="flex justify-end pt-8 border-t border-white/5">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-3 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white px-10 py-4 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_25px_rgba(190,126,199,0.3)] transform active:scale-95 disabled:opacity-50"
-              >
-                {saving ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : (
-                    <><Save size={18} /> Update Workspace Info</>
-                )}
-              </button>
-            </div>
+            {userRole?.toLowerCase() === 'owner' && (
+              <div className="flex justify-end pt-8 border-t border-white/5">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-3 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white px-10 py-4 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_25px_rgba(190,126,199,0.3)] transform active:scale-95 disabled:opacity-50"
+                >
+                  {saving ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                      <><Save size={18} /> Update Workspace Info</>
+                  )}
+                </button>
+              </div>
+            )}
 
           </div>
         </div>

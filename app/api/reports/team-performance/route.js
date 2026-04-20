@@ -51,22 +51,28 @@ export async function GET(request) {
       members.map(async (member) => {
         const uid = member.user.user_id;
 
-        // Assigned conversations
+        // Handled/Assigned conversations
         const assigned = await prisma.chatSession.count({
           where: {
             ...wsFilter,
-            assigned_user_id: uid,
             start_time: { gte: startDate, lte: endDate },
+            OR: [
+              { assigned_user_id: uid },
+              { messages: { some: { sender_type: "AGENT", sender_id: uid } } },
+            ],
           },
         });
 
-        // Closed/resolved conversations
+        // Closed/resolved conversations handled
         const closed = await prisma.chatSession.count({
           where: {
             ...wsFilter,
-            assigned_user_id: uid,
             start_time: { gte: startDate, lte: endDate },
             status: { in: ["CLOSED", "RESOLVED"] },
+            OR: [
+              { assigned_user_id: uid },
+              { messages: { some: { sender_type: "AGENT", sender_id: uid } } },
+            ],
           },
         });
 

@@ -23,7 +23,7 @@ export default function ContactsChannelsReport() {
     { startDate: thirtyDaysAgo, endDate: new Date(), key: "selection" },
   ]);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = 5;
 
   // Fetch both APIs
   const { data: contactData, isLoading: contactLoading } = useReportData("/api/reports/contacts", range);
@@ -73,8 +73,8 @@ export default function ContactsChannelsReport() {
       headerActions={<ReportDatePicker range={range} setRange={setRange} />}
       kpiCards={
         <>
-          <StatsCard label="New Contacts" value={contactStats.totalNew || 0} icon={UserPlus} color="#4ade80" subtitle={`${contactChartData.length} days`} />
-          <StatsCard label="Active Returning" value={contactStats.activeReturning || 0} icon={UserCheck} color="#60a5fa" subtitle="engaged this period" />
+          <StatsCard label="New Contacts" value={contactStats.totalNew || 0} icon={UserPlus} color="#4ade80" subtitle={`${contactChartData.length} days with data`} />
+          <StatsCard label="Avg. Daily Contacts" value={contactStats.avgPerDay || 0} icon={TrendingUp} color="#60a5fa" subtitle="new customers / day" />
           <StatsCard label="Top Channel" value={contactStats.topChannel || "-"} icon={MessageCircle} color="#22d3ee" subtitle="most acquisitions" />
         </>
       }

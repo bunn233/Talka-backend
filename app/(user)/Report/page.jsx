@@ -7,9 +7,8 @@ import {
 } from "recharts";
 import {
   LayoutDashboard, Users, MessageSquare, Timer, TrendingUp, BarChart3,
-  ArrowRight, CheckCircle2, Activity, Clock, Flame, Moon,
+  CheckCircle2, Activity, Clock, Flame, Moon,
 } from "lucide-react";
-import Link from "next/link";
 
 import {
   StatsCard, ReportCard, ChartContainer, StatusBadge,
@@ -17,13 +16,6 @@ import {
   CHART_COLORS, CHART_THEME,
 } from "@/app/components/Report/ReportShared";
 
-const LINK_CARDS = [
-  { href: "/Report/contacts", label: "Contacts & Channels", desc: "Customer acquisition & platform analytics", icon: Users, color: CHART_COLORS.green },
-  { href: "/Report/conversation", label: "Conversations & Messages", desc: "Chat session & message flow analytics", icon: MessageSquare, color: CHART_COLORS.blue },
-  { href: "/Report/responses", label: "Response Time", desc: "Response time analytics", icon: Timer, color: CHART_COLORS.amber },
-  { href: "/Report/users", label: "Team Performance", desc: "Agent productivity", icon: Activity, color: CHART_COLORS.cyan },
-  { href: "/Report/aitoken", label: "AI Usage", desc: "Token consumption analytics", icon: TrendingUp, color: CHART_COLORS.purple },
-];
 
 // Heatmap Component
 function PeakHoursHeatmap({ data, peakHour, quietHour }) {
@@ -33,12 +25,14 @@ function PeakHoursHeatmap({ data, peakHour, quietHour }) {
   const maxVal = Math.max(...data.map((d) => d.value), 1);
 
   const getColor = (value) => {
-    if (value === 0) return "rgba(255,255,255,0.02)";
+    if (value === 0) return "rgba(255,255,255,0.03)";
     const intensity = Math.min(value / maxVal, 1);
-    if (intensity < 0.25) return `rgba(190,126,199,${0.1 + intensity * 0.3})`;
-    if (intensity < 0.5) return `rgba(190,126,199,${0.2 + intensity * 0.4})`;
-    if (intensity < 0.75) return `rgba(249,115,22,${0.3 + intensity * 0.4})`;
-    return `rgba(239,68,68,${0.5 + intensity * 0.5})`;
+    // Sequential monochromatic scale using brand color for better UX
+    if (intensity <= 0.2) return "rgba(190, 126, 199, 0.25)";
+    if (intensity <= 0.4) return "rgba(190, 126, 199, 0.45)";
+    if (intensity <= 0.6) return "rgba(190, 126, 199, 0.65)";
+    if (intensity <= 0.8) return "rgba(190, 126, 199, 0.85)";
+    return "rgba(190, 126, 199, 1)";
   };
 
   const getVal = (day, hour) => {
@@ -96,27 +90,27 @@ function PeakHoursHeatmap({ data, peakHour, quietHour }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center justify-between px-1">
+      <div className="flex items-center justify-between px-1 mt-1">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
-            <Flame size={12} className="text-orange-400" />
+            <Flame size={12} className="text-[#BE7EC7]" />
             <span className="text-[10px] font-bold text-white/50">
-              Peak: <span className="text-orange-400">{peakHour?.day} {peakHour?.hour}</span> ({peakHour?.count} msgs)
+              Peak: <span className="text-white font-black">{peakHour?.day} {peakHour?.hour}</span> <span className="text-white/30">({peakHour?.count} msgs)</span>
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Moon size={12} className="text-blue-400" />
+            <Moon size={12} className="text-white/30" />
             <span className="text-[10px] font-bold text-white/50">
-              Quiet: <span className="text-blue-400">{quietHour?.day} {quietHour?.hour}</span>
+              Quiet: <span className="text-white/60 font-semibold">{quietHour?.day} {quietHour?.hour}</span>
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[9px] text-white/20">Less</span>
-          {[0.05, 0.15, 0.3, 0.5, 0.8].map((v, i) => (
-            <div key={i} className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: getColor(maxVal * v) }} />
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] text-white/30 font-medium">Less</span>
+          {[0.1, 0.3, 0.5, 0.7, 0.9].map((v, i) => (
+            <div key={i} className="w-3.5 h-3.5 rounded-[3px]" style={{ backgroundColor: getColor(maxVal * v) }} />
           ))}
-          <span className="text-[9px] text-white/20">More</span>
+          <span className="text-[9px] text-white/30 font-medium pl-0.5">More</span>
         </div>
       </div>
     </div>
@@ -259,31 +253,6 @@ export default function ReportOverview() {
         </ReportCard>
       )}
 
-      {/* Quick Links Grid */}
-      <div>
-        <h2 className="text-white/30 text-[10px] font-black uppercase tracking-[0.2em] mb-4 px-1">
-          Detailed Reports
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {LINK_CARDS.map((card) => (
-            <Link key={card.href} href={card.href}>
-              <div className="group bg-[#1F192E] border border-white/5 hover:border-white/15 rounded-2xl p-5 flex items-center gap-4 transition-all duration-300 hover:shadow-lg hover:shadow-black/10 cursor-pointer">
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110"
-                  style={{ backgroundColor: `${card.color}15` }}
-                >
-                  <card.icon size={18} style={{ color: card.color }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold text-sm">{card.label}</p>
-                  <p className="text-white/30 text-[10px] font-medium mt-0.5">{card.desc}</p>
-                </div>
-                <ArrowRight size={14} className="text-white/20 group-hover:text-white/50 group-hover:translate-x-1 transition-all shrink-0" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
     </ReportPageWrapper>
   );
 }

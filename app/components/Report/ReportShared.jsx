@@ -426,7 +426,7 @@ export function ExportCSVButton({ data, filename = "report", headers }) {
       className="flex items-center gap-2 bg-[#1F192E] border border-white/10 hover:border-[#BE7EC7]/30 px-3 py-2 rounded-xl text-white/50 hover:text-[#BE7EC7] text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed"
     >
       <Download size={12} />
-      Export CSV
+      Export Excel/CSV
     </button>
   );
 }

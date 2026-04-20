@@ -11,36 +11,22 @@ import {
   StatsCard, ReportCard, ReportTable, ReportTableRow, ReportTableCell,
   ReportDatePicker, ReportPageWrapper, ChartContainer,
   StatusBadge, CustomTooltip, ExportCSVButton, ReportSkeleton,
-  CHART_COLORS, CHART_THEME,
+  useReportData, CHART_COLORS, CHART_THEME,
 } from "@/app/components/Report/ReportShared";
 
-// 🟢 [BACKEND NOTE] AI Token data requires a new AiTokenLog model in Prisma.
-// Until then, this page uses static placeholder data to show the layout.
-// Once the model exists, replace with useReportData("/api/reports/ai-usage", range).
 
-const placeholderChartData = [
-  { day: "Day 1", tokens: 0 },
-  { day: "Day 2", tokens: 0 },
-  { day: "Day 3", tokens: 0 },
-  { day: "Day 4", tokens: 0 },
-  { day: "Day 5", tokens: 0 },
-  { day: "Day 6", tokens: 0 },
-  { day: "Day 7", tokens: 0 },
-];
-
-const placeholderBreakdown = [
-  { feature: "Support Agent", tokens: 0, cost: 0, pct: 0 },
-  { feature: "Receptionist", tokens: 0, cost: 0, pct: 0 },
-  { feature: "Sales Agent", tokens: 0, cost: 0, pct: 0 },
-];
 
 export default function AiTokenReport() {
   const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 7);
   const [range, setRange] = useState([
     { startDate: thirtyDaysAgo, endDate: new Date(), key: "selection" },
   ]);
-  const [chartData] = useState(placeholderChartData);
-  const [breakdown] = useState(placeholderBreakdown);
+  const { data, isLoading } = useReportData("/api/reports/aitoken", range);
+
+  if (isLoading) return <ReportSkeleton />;
+
+  const chartData = data?.chartData || [];
+  const breakdown = data?.breakdown || [];
 
   const totalTokens = breakdown.reduce((s, d) => s + d.tokens, 0);
   const totalCost = breakdown.reduce((s, d) => s + d.cost, 0);
@@ -68,18 +54,6 @@ export default function AiTokenReport() {
         </>
       }
     >
-      {/* Infrastructure Alert */}
-      <div className="bg-[#1c1626] border border-amber-500/40 shadow-[0_4px_20px_rgba(245,158,11,0.15)] rounded-2xl p-4 flex items-start gap-3 relative z-10 mt-[-6px]">
-        <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-amber-400 text-xs font-bold">Awaiting Database Model</p>
-          <p className="text-white/40 text-[11px] mt-0.5">
-            AI Token logging requires an <code className="text-amber-400/70">AiTokenLog</code> model in Prisma. 
-            Data shown below is placeholder. Once the model is created, this page will display real usage data.
-          </p>
-        </div>
-      </div>
-
       {/* Token Usage Chart + Donut */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <ReportCard title="Token Usage Trend" tooltip="ปริมาณ Token ที่ใช้ต่อวัน" className="xl:col-span-2">

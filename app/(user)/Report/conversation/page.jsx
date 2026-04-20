@@ -31,7 +31,7 @@ export default function ConversationsReport() {
     { startDate: thirtyDaysAgo, endDate: new Date(), key: "selection" },
   ]);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = 5;
 
   // Fetch both conversations + messages data
   const { data: convoData, isLoading: convoLoading } = useReportData("/api/reports/conversations", range);
@@ -70,9 +70,9 @@ export default function ConversationsReport() {
       kpiCards={
         <>
           <StatsCard label="Conversations" value={convoStats.total || 0} icon={Layers} color="#BE7EC7" subtitle="total sessions" />
-          <StatsCard label="Open" value={convoStats.open || 0} icon={PlayCircle} color="#4ade80" subtitle="in progress" />
+          <StatsCard label="Open" value={convoStats.opened || 0} icon={PlayCircle} color="#4ade80" subtitle="in progress" />
           <StatsCard label="Pending" value={convoStats.pending || 0} icon={Clock} color="#fbbf24" subtitle="waiting" />
-          <StatsCard label="Resolved" value={convoStats.resolved || 0} icon={CheckCircle2} color="#60a5fa" subtitle="completed" />
+          <StatsCard label="Closed" value={convoStats.closed || 0} icon={CheckCircle2} color="#60a5fa" subtitle="completed" />
           <StatsCard label="Messages" value={(msgStats.total || 0).toLocaleString()} icon={MessageSquare} color="#22d3ee" subtitle={`↓${msgStats.incoming || 0} ↑${msgStats.outgoing || 0} 🤖${msgStats.bot || 0}`} />
         </>
       }
@@ -143,25 +143,15 @@ export default function ConversationsReport() {
           <ChartContainer height={280}>
             {msgChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={msgChartData}>
-                  <defs>
-                    <linearGradient id="gIncoming" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gOutgoing" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_COLORS.green} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={CHART_COLORS.green} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" />
+                <BarChart data={msgChartData} barGap={4}>
+                  <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="displayDate" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
                   <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="incoming" name="Incoming" stroke={CHART_COLORS.blue} strokeWidth={2} fillOpacity={1} fill="url(#gIncoming)" />
-                  <Area type="monotone" dataKey="outgoing" name="Outgoing" stroke={CHART_COLORS.green} strokeWidth={2} fillOpacity={1} fill="url(#gOutgoing)" />
-                  <Area type="monotone" dataKey="bot" name="Bot" stroke={CHART_COLORS.cyan} strokeWidth={1.5} fillOpacity={0} fill="transparent" />
-                </AreaChart>
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                  <Bar dataKey="incoming" name="Incoming" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  <Bar dataKey="outgoing" name="Outgoing" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  <Bar dataKey="bot" name="Bot" fill={CHART_COLORS.cyan} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                </BarChart>
               </ResponsiveContainer>
             ) : <EmptyState />}
           </ChartContainer>

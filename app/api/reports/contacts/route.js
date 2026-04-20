@@ -92,8 +92,21 @@ export async function GET(request) {
 
     // Stats
     const totalNew = customers.length;
-    const avgPerDay = chartData.length > 0 ? (totalNew / chartData.length).toFixed(1) : "0";
+    let avgPerDay = "0.0";
+    
+    // Calculate total days in range
+    const diffTime = Math.abs(endDate - startDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    avgPerDay = (totalNew / diffDays).toFixed(1);
+
     const peakDay = chartData.reduce((max, d) => (d.newContacts > (max?.newContacts || 0) ? d : max), null);
+    
+    // Calculate top channel
+    let topChannel = "-";
+    if (channelDistribution.length > 0) {
+      const best = channelDistribution.reduce((max, ch) => ch.value > max.value ? ch : max, channelDistribution[0]);
+      topChannel = best.name;
+    }
 
     return NextResponse.json({
       chartData,
@@ -102,6 +115,7 @@ export async function GET(request) {
       stats: {
         totalNew,
         avgPerDay,
+        topChannel,
         peakDay: peakDay ? { value: peakDay.newContacts, date: peakDay.displayDate } : null,
         channelsActive: channelDistribution.length,
       },
