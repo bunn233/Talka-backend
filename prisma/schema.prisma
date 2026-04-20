@@ -145,6 +145,15 @@ model AiAgent {
   updated_at   DateTime @updatedAt
 }
 
+model AiPrompt {
+  id        Int      @id @default(autoincrement())
+  name      String   
+  action    String   
+  active    Boolean  @default(true)
+  isDefault Boolean  @default(false)
+  created_at DateTime @default(now())
+}
+
 model ChatSession {
   chat_session_id Int @id @default(autoincrement())
   customer_id Int

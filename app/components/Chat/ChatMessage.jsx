@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Tooltip } from "react-tooltip";
 import Picker from "emoji-picker-react";
-import { Users, Eye, Bot, ChevronDown, Power, Check } from "lucide-react";
+import { Users, Eye, Bot, ChevronDown, Power, Check, Wand2 } from "lucide-react";
 import Pusher from "pusher-js";
 
 const getInitials = (name) => {
@@ -11,6 +11,14 @@ const getInitials = (name) => {
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
 };
+
+// 📦 ข้อมูล Prompt พื้นฐาน (เอามาจากหน้า Settings)
+const BUILT_IN_PROMPTS = [
+  { id: "1", name: "เปลี่ยนโทนเสียง", action: "ปรับข้อความให้สุภาพ เป็นมืออาชีพ และมีความเห็นอกเห็นใจลูกค้า" },
+  { id: "2", name: "แปลเป็นภาษาอังกฤษ", action: "Translate this text to professional English" },
+  { id: "3", name: "แก้ไขการสะกดคำ", action: "แก้ไขไวยากรณ์และการสะกดคำภาษาไทยให้ถูกต้อง 100%" },
+  { id: "4", name: "ย่อให้สั้นลง", action: "สรุปข้อความให้สั้น กระชับ และตรงประเด็นที่สุด" }
+];
 
 export default function ChatMessage({
   chat,
@@ -39,13 +47,17 @@ export default function ChatMessage({
   const viewersDropdownRef = useRef(null);
   const [activeViewers, setActiveViewers] = useState([]);
 
-  // ================= 🤖 [เพิ่มใหม่] AI AGENT STATES =================
+  // ================= 🤖 AI AGENT STATES =================
   const [agentsList, setAgentsList] = useState([]);
   const [activeAiAgent, setActiveAiAgent] = useState(null);
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const agentDropdownRef = useRef(null);
 
-  // 🤖 [เพิ่มใหม่] ดึงข้อมูล AI Agent
+  // ================= 🪄 AI REWRITE STATES =================
+  const [showPromptPicker, setShowPromptPicker] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
+  const promptPickerRef = useRef(null);
+
   useEffect(() => {
     fetch('/api/Ai/agents')
       .then(res => res.json())
@@ -57,23 +69,17 @@ export default function ChatMessage({
       .catch(console.error);
   }, []);
 
-  // 🤖 [เพิ่มใหม่] ฟังก์ชันสลับโหมด AI
-  // 🤖 ฟังก์ชันสลับโหมด AI
   const toggleAiMode = async (agent) => {
     if (!agent) {
-      // ปิด AI Mode (มนุษย์พิมพ์เอง)
       setActiveAiAgent(null);
       setShowAgentDropdown(false);
-      // 🎯 ยิง API ไปบอก Database ว่าให้ยกเลิก AI (ai_agent_id = null)
       await fetch(`/api/chats/${chat.id}/ai-mode`, {
         method: 'POST',
         body: JSON.stringify({ ai_agent_id: null })
       });
     } else {
-      // เปิด AI Mode
       setActiveAiAgent(agent);
       setShowAgentDropdown(false);
-      // 🎯 ยิง API ไปบอก Database ว่าห้องนี้ใช้ AI ตัวไหนตอบ
       await fetch(`/api/chats/${chat.id}/ai-mode`, {
         method: 'POST',
         body: JSON.stringify({ ai_agent_id: agent.id })
@@ -81,17 +87,47 @@ export default function ChatMessage({
     }
   };
 
-  // 🤖 [เพิ่มใหม่] ปิด Dropdown AI เมื่อคลิกที่อื่น
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target)) {
         setShowAgentDropdown(false);
       }
+      if (promptPickerRef.current && !promptPickerRef.current.contains(event.target)) {
+        setShowPromptPicker(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-  // ===============================================================
+
+  // 🪄 ฟังก์ชันเรียกใช้งาน AI Rewrite
+  const handleAiRewrite = async (action) => {
+    const currentText = textareaRef.current?.value;
+    if (!currentText?.trim()) return alert("กรุณาพิมพ์ข้อความก่อนใช้ AI ช่วยเกลาคำ");
+
+    setIsRewriting(true);
+    setShowPromptPicker(false);
+
+    try {
+      const res = await fetch('/api/Ai/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: currentText, action: action })
+      });
+      
+      const data = await res.json();
+      if (data.text && textareaRef.current) {
+        textareaRef.current.value = data.text; // นำข้อความใหม่มาทับของเดิม
+      } else {
+        alert("เกิดข้อผิดพลาดในการแปลงข้อความ");
+      }
+    } catch (error) {
+      console.error("Rewrite error:", error);
+      alert("ไม่สามารถเชื่อมต่อกับ AI ได้");
+    } finally {
+      setIsRewriting(false);
+    }
+  };
 
   const tabIdRef = useRef(Math.random().toString(36).substring(7));
 
@@ -308,7 +344,6 @@ export default function ChatMessage({
         {/* Header Right: AI Auto-Reply & Viewers */}
         <div className="flex items-center gap-4 shrink-0">
 
-          {/* 🤖 [เพิ่มใหม่] AI Agent Selector Dropdown */}
           <div className="relative" ref={agentDropdownRef}>
             <button
               onClick={() => setShowAgentDropdown(!showAgentDropdown)}
@@ -337,7 +372,6 @@ export default function ChatMessage({
                 </div>
                 <div className="max-h-[280px] overflow-y-auto custom-scrollbar p-1.5">
 
-                  {/* Option: Stop AI (Manual Mode) */}
                   <button
                     onClick={() => toggleAiMode(null)}
                     className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center gap-3 mb-1
@@ -356,7 +390,6 @@ export default function ChatMessage({
 
                   <div className="my-2 border-t border-white/5" />
 
-                  {/* Options: Available AI Agents */}
                   {agentsList.length === 0 ? (
                     <div className="p-4 text-center text-xs text-white/40">No active agents found.</div>
                   ) : (
@@ -384,7 +417,7 @@ export default function ChatMessage({
             )}
           </div>
 
-          {/* Viewers Area (โค้ดเดิมของคุณทั้งหมด) */}
+          {/* Viewers Area */}
           <div className="relative shrink-0 flex items-center pl-4 border-l border-white/10 z-10" ref={viewersDropdownRef}>
             <div className="flex items-center cursor-pointer hover:scale-105 transition-transform duration-200" onClick={() => setShowViewers(!showViewers)}>
               <div className="flex items-center -space-x-4">
@@ -435,8 +468,6 @@ export default function ChatMessage({
 
       {/* --- Chat Messages --- */}
       <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 text-white/90 pr-2 mb-4 flex flex-col relative z-0">
-
-        {/* 🤖 [เพิ่มใหม่] System Message - โชว์ตอนเปิด AI */}
         {activeAiAgent && (
           <div className="w-full flex justify-center mb-4">
             <div className="bg-purple-600/10 border border-purple-500/20 rounded-xl px-4 py-2 text-xs text-purple-300 font-medium flex items-center gap-2">
@@ -479,8 +510,6 @@ export default function ChatMessage({
 
       {/* --- Input Area --- */}
       <div className="relative shrink-0 border-t border-white/5 pt-4 z-10 transition-all duration-300">
-
-        {/* 🤖 [เพิ่มใหม่] ถ้า AI กำลังทำงาน จะซ่อนช่องพิมพ์และขึ้นปุ่มให้ Take Over */}
         {activeAiAgent ? (
           <div className="w-full flex flex-col items-center justify-center py-6 bg-gradient-to-r from-purple-500/5 via-[#BE7EC7]/10 to-purple-500/5 rounded-2xl border border-[#BE7EC7]/20 shadow-inner">
             <Bot className="text-[#BE7EC7] mb-2 animate-bounce" size={28} />
@@ -494,25 +523,70 @@ export default function ChatMessage({
             </button>
           </div>
         ) : (
-          /* โหมดปกติ (Manual) - โค้ดเดิมของคุณทั้งหมด */
           <>
-            {showEmojiPicker && (
-              <div className="absolute bottom-full right-0 mb-2 z-50">
-                <Picker onEmojiClick={(emojiData) => { const editor = textareaRef.current; if (!editor) return; const startPos = editor.selectionStart; const endPos = editor.selectionEnd; editor.value = editor.value.substring(0, startPos) + emojiData.emoji + editor.value.substring(endPos); editor.focus(); }} theme="dark" />
-              </div>
-            )}
-            <textarea
-              ref={textareaRef}
-              onKeyDown={handleKeyDown}
-              style={{ height: `${Math.min(height, 150)}px` }}
-              className="w-full p-3.5 bg-white/5 text-white text-sm rounded-xl border border-white/10 focus:border-[#BE7EC7] focus:ring-1 focus:ring-[#BE7EC7] outline-none resize-none custom-scrollbar transition-all"
-              placeholder="Type a message..."
-            />
+            <div className="relative">
+              {showEmojiPicker && (
+                <div className="absolute bottom-[110%] right-0 z-50 shadow-2xl rounded-2xl overflow-hidden">
+                  <Picker onEmojiClick={(emojiData) => { const editor = textareaRef.current; if (!editor) return; const startPos = editor.selectionStart; const endPos = editor.selectionEnd; editor.value = editor.value.substring(0, startPos) + emojiData.emoji + editor.value.substring(endPos); editor.focus(); }} theme="dark" />
+                </div>
+              )}
+              
+              {/* 🪄 [เพิ่มใหม่] เมนู AI Prompt */}
+              {showPromptPicker && (
+                <div ref={promptPickerRef} className="absolute bottom-[110%] right-[110px] w-64 bg-[#1E1B29] border border-[#BE7EC7]/30 rounded-2xl shadow-2xl p-2 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                  <p className="text-[10px] text-[#BE7EC7] font-bold uppercase tracking-widest px-2 mb-2">AI Copilot</p>
+                  <div className="space-y-1">
+                    {BUILT_IN_PROMPTS.map(p => (
+                      <button 
+                        key={p.id}
+                        onClick={() => handleAiRewrite(p.action)}
+                        className="w-full text-left p-2.5 hover:bg-white/5 rounded-xl transition-colors group flex items-start gap-2"
+                      >
+                        <Wand2 size={14} className="text-white/40 group-hover:text-[#BE7EC7] shrink-0 mt-0.5 transition-colors" />
+                        <div>
+                          <p className="text-sm font-medium text-white/90 group-hover:text-white">{p.name}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isRewriting && (
+                <div className="absolute inset-0 bg-[#1E1B29]/60 backdrop-blur-[2px] z-10 rounded-xl flex items-center justify-center border border-[#BE7EC7]/20">
+                  <div className="flex items-center gap-2 text-[#BE7EC7] font-bold text-sm bg-[#1E1B29] px-4 py-2 rounded-full border border-[#BE7EC7]/30 shadow-lg">
+                    <Wand2 size={16} className="animate-pulse" /> AI กำลังช่วยเกลาข้อความ...
+                  </div>
+                </div>
+              )}
+
+              <textarea
+                ref={textareaRef}
+                onKeyDown={handleKeyDown}
+                style={{ height: `${Math.min(height, 150)}px` }}
+                className="w-full p-3.5 bg-white/5 text-white text-sm rounded-xl border border-white/10 focus:border-[#BE7EC7] focus:ring-1 focus:ring-[#BE7EC7] outline-none resize-none custom-scrollbar transition-all disabled:opacity-50"
+                placeholder="Type a message..."
+                disabled={isRewriting}
+              />
+            </div>
+
             <div className="flex gap-2 mt-3 items-center">
               <input type="file" multiple ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-              <button onClick={handleAttachClick} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5"><i className="fa-solid fa-paperclip"></i></button>
-              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5"><i className="fa-regular fa-face-smile"></i></button>
-              <button onClick={handleSendClick} className="flex-1 px-4 py-2.5 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white rounded-xl transition-all font-semibold flex items-center justify-center gap-2 shadow-lg shadow-[#BE7EC7]/20"><i className="fa-solid fa-paper-plane text-xs"></i> Send</button>
+              <button onClick={handleAttachClick} disabled={isRewriting} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5 disabled:opacity-50"><i className="fa-solid fa-paperclip"></i></button>
+              
+              {/* 🪄 [เพิ่มใหม่] ปุ่มไม้กายสิทธิ์ */}
+              <button 
+                onClick={() => setShowPromptPicker(!showPromptPicker)} 
+                disabled={isRewriting} 
+                title="AI ช่วยเกลาข้อความ"
+                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all border disabled:opacity-50 cursor-pointer shadow-sm
+                  ${showPromptPicker ? 'bg-[#BE7EC7]/20 border-[#BE7EC7]/50 text-[#BE7EC7]' : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/50 hover:text-white'}`}
+              >
+                <Wand2 size={18} />
+              </button>
+
+              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} disabled={isRewriting} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5 disabled:opacity-50"><i className="fa-regular fa-face-smile"></i></button>
+              <button onClick={handleSendClick} disabled={isRewriting} className="flex-1 px-4 py-2.5 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white rounded-xl transition-all font-semibold flex items-center justify-center gap-2 shadow-lg shadow-[#BE7EC7]/20 disabled:opacity-50"><i className="fa-solid fa-paper-plane text-xs"></i> Send</button>
             </div>
           </>
         )}
