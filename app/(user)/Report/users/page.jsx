@@ -1,217 +1,164 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
-import { DateRange } from "react-date-range";
-import "react-date-range/dist/styles.css";
-import "react-date-range/dist/theme/default.css";
+import React, { useState } from "react";
+import {
+  BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { Users2, Trophy, Clock, MessageSquare, Shield, Star, Activity } from "lucide-react";
 
-// UI Helpers 
-const Button = ({ children, className = "", ...props }) => (
-  <button
-    className={`px-3 py-2 rounded-md border border-[rgba(254,253,253,0.5)] text-white hover:bg-[rgba(255,255,255,0.1)] transition ${className}`}
-    {...props}
-  >
-    {children}
-  </button>
-);
+import {
+  StatsCard, ReportCard, ReportTable, ReportTableRow, ReportTableCell,
+  ReportDatePicker, ReportPagination, ReportPageWrapper, ChartContainer,
+  StatusBadge, CustomTooltip, ExportCSVButton, ReportSkeleton, EmptyState,
+  useReportData, formatTime, CHART_COLORS, CHART_THEME,
+} from "@/app/components/Report/ReportShared";
 
-const Card = ({ title, children }) => (
-  <div className="border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl p-6 text-white relative z-10">
-    <h2 className="text-lg font-semibold mb-4">{title}</h2>
-    {children}
-  </div>
-);
-
-const Table = ({ headers, data }) => (
-  <div className="overflow-x-auto">
-    <table className="min-w-full border-collapse text-gray-300 text-sm">
-      <thead>
-        <tr className="border-b border-gray-500/30 text-left">
-          {headers.map((h, i) => (
-            <th key={i} className="py-2 px-4 font-medium">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.length > 0 ? (
-          data.map((row, idx) => (
-            <tr key={idx} className="border-b border-gray-500/20">
-              {Object.values(row).map((cell, cIdx) => (
-                <td key={cIdx} className="py-2 px-4">{cell}</td>
-              ))}
-            </tr>
-          ))
-        ) : (
-          <tr>
-            <td colSpan={headers.length} className="text-center py-6 text-gray-400">
-              No Available Data
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  </div>
-);
-
-const PaginationControls = ({ totalItems, itemsPerPage, currentPage, setCurrentPage }) => {
-  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
-  return (
-    <div className="flex justify-end items-center mt-4 text-sm text-gray-400 gap-3">
-      <span>
-        {totalItems === 0
-          ? "1–0 of 0"
-          : `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, totalItems)} of ${totalItems}`}
-      </span>
-      <button
-        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-        disabled={currentPage === 1}
-        className="p-1 rounded-md hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-40 transition"
-      >
-        <ChevronLeft size={18} />
-      </button>
-      <button
-        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-        disabled={currentPage === totalPages}
-        className="p-1 rounded-md hover:bg-[rgba(255,255,255,0.1)] disabled:opacity-40 transition"
-      >
-        <ChevronRight size={18} />
-      </button>
-    </div>
-  );
-};
-
-// Main Component
-export default function UsersPage() {
-  const defaultStart = "2025-10-27";
-  const defaultEnd = "2025-10-31";
-
+export default function TeamPerformanceReport() {
+  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const [range, setRange] = useState([
-    { startDate: new Date(defaultStart), endDate: new Date(defaultEnd), key: "selection" },
+    { startDate: thirtyDaysAgo, endDate: new Date(), key: "selection" },
   ]);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const calendarRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
-  // 🟢 [BACKEND NOTE]: State สำหรับรับข้อมูลจาก API
-  const [userPerformanceData, setUserPerformanceData] = useState([]);
-  const [commentLogData, setCommentLogData] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data, isLoading } = useReportData("/api/reports/team-performance", range);
 
-  const [userCurrentPage, setUserCurrentPage] = useState(1);
-  const [userItemsPerPage] = useState(5);
+  if (isLoading) return <ReportSkeleton />;
 
-  const [commentCurrentPage, setCommentCurrentPage] = useState(1);
-  const [commentItemsPerPage] = useState(5);
+  const teamData = data?.teamData || [];
+  const activityLogs = data?.activityLogs || [];
+  const stats = data?.stats || {};
 
-  const totalUserItems = userPerformanceData.length; 
-  const totalCommentItems = commentLogData.length; 
+  const chartTeamData = teamData.map((m) => ({
+    name: m.name,
+    assigned: m.assigned,
+    closed: m.closed,
+    messages: m.messages,
+  }));
 
-  // 🟢 [BACKEND NOTE]: ฟังก์ชันนี้จะไปดึงข้อมูลใหม่ทุกครั้งที่เลือกวันที่ใน Calendar (range เปลี่ยน)
-  useEffect(() => {
-    const fetchUsersReport = async () => {
-      setIsLoading(true);
-      try {
-        const startStr = range[0].startDate.toISOString();
-        const endStr = range[0].endDate.toISOString();
+  const paginatedLogs = activityLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-        // 🟢 โค้ดตัวอย่างการเรียก API ดึงข้อมูล
-        // const response = await fetch(`/api/reports/users?start=${startStr}&end=${endStr}`);
-        // const data = await response.json();
-        // setUserPerformanceData(data.performance);
-        // setCommentLogData(data.comments);
+  const ROLE_COLORS = {
+    Owner: "#fbbf24",
+    ADMIN: "#f97316",
+    MANAGER: "#BE7EC7",
+    EMPLOYEE: "#60a5fa",
+  };
 
-        // จำลองข้อมูลเปล่า (เมื่อใช้ API ลบ 2 บรรทัดนี้ทิ้งได้เลย)
-        setUserPerformanceData([]);
-        setCommentLogData([]);
-
-      } catch (error) {
-        console.error("Failed to fetch user report:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchUsersReport();
-  }, [range]);
-
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target)) setShowCalendar(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const formatDateText = (date) =>
-    new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-
-
-  // ==========================================================
-  // UI ส่วนล่างนี้ไม่มีการดัดแปลงใดๆ โครงสร้าง Component ยังอยู่ครบ 100%
-  // ==========================================================
   return (
-    <div className="p-6 space-y-8 bg-[rgba(32,41,59,0.25)] backdrop-blur-xl rounded-3xl text-white">
-      {/* Calendar Button */}
-      <div className="relative mb-6" ref={calendarRef}>
-        <Button
-          onClick={() => setShowCalendar((s) => !s)}
-          className="flex items-center gap-2"
-        >
-          <Calendar size={16} />
-          {formatDateText(range[0].startDate)} - {formatDateText(range[0].endDate)}
-        </Button>
+    <ReportPageWrapper
+      title="Team Performance"
+      subtitle="Agent Productivity Analytics"
+      icon={Users2}
+      headerActions={<ReportDatePicker range={range} setRange={setRange} />}
+      kpiCards={
+        <>
+          <StatsCard label="Total Handled" value={stats.totalAssigned || 0} icon={MessageSquare} color="#60a5fa" subtitle="conversations" />
+          <StatsCard label="Total Closed" value={stats.totalClosed || 0} icon={Trophy} color="#4ade80" subtitle="resolved" />
+          <StatsCard label="Messages Sent" value={(stats.totalMessages || 0).toLocaleString()} icon={MessageSquare} color="#BE7EC7" subtitle="by all agents" />
+        </>
+      }
+    >
 
-        {showCalendar && (
-          <div className="absolute top-10 z-20">
-            <div className="transform scale-75 origin-top-left">
-              <DateRange
-                editableDateInputs
-                onChange={(item) => setRange([item.selection])}
-                moveRangeOnFirstSelection={false}
-                ranges={range}
-                rangeColors={["#8B5CF6"]}
-              />
-              <Button
-                onClick={() => setShowCalendar(false)}
-                className="mt-2 w-full flex justify-center items-center bg-purple-400 text-white"
-              >
-                Done
-              </Button>
+      {/* Team Performance Bar Chart */}
+      <ReportCard title="Agent Comparison" tooltip="เปรียบเทียบจำนวนการจัดการแชท (Handled) vs ปิดแชท (Closed) ของแต่ละสมาชิก">
+        <ChartContainer height={300}>
+          {chartTeamData.length > 0 ? (
+            <div className="w-full h-full overflow-x-auto overflow-y-hidden pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <div style={{ minWidth: chartTeamData.length > 5 ? `${chartTeamData.length * 100}px` : "100%", height: "100%" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartTeamData} barGap={4}>
+                    <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.5)" }} tickMargin={10} />
+                    <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                    <Bar dataKey="assigned" name="Handled" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} barSize={24} />
+                    <Bar dataKey="closed" name="Closed" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          ) : <EmptyState title="No team data" subtitle="No workspace members found" />}
+        </ChartContainer>
+      </ReportCard>
 
-      {/* User Performance */}
-      <Card title="User Performance">
-        <Table
-          headers={["User", "Team", "Conversations Assigned", "Conversations Closed", "Messages Sent", "Comments"]}
-          data={userPerformanceData.slice((userCurrentPage - 1) * userItemsPerPage, userCurrentPage * userItemsPerPage)}
-        />
-        <PaginationControls
-          totalItems={totalUserItems}
-          itemsPerPage={userItemsPerPage}
-          currentPage={userCurrentPage}
-          setCurrentPage={setUserCurrentPage}
-        />
-      </Card>
+      {/* Team Performance Table */}
+      <ReportCard
+        title="Individual Performance"
+        tooltip="สรุปผลงานรายบุคคลของทีม"
+        actions={<ExportCSVButton data={teamData.map(m => ({ name: m.name, role: m.role, assigned: m.assigned, closed: m.closed, messages: m.messages, resolution: m.resolutionRate + "%" }))} filename="team_performance" />}
+      >
+        <ReportTable headers={["Agent", "Role", "Handled", "Closed", "Messages", "Resolution"]}>
+          {teamData.map((member, i) => {
+            const isTop = i === 0 && member.closed > 0;
+            return (
+              <ReportTableRow key={i}>
+                <ReportTableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[#BE7EC7]/15 flex items-center justify-center overflow-hidden shrink-0">
+                      {member.profileImage ? (
+                        <img src={member.profileImage} alt={member.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[#BE7EC7] text-xs font-black">{member.name?.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-white font-bold text-sm">{member.name}</span>
+                      {isTop && <span className="ml-1.5 text-[8px] bg-amber-500/20 text-amber-400 px-1 py-[1px] rounded font-black">TOP</span>}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${member.onlineStatus === "ONLINE" ? "bg-emerald-400" : member.onlineStatus === "AWAY" ? "bg-amber-400" : "bg-neutral-500"}`} />
+                        <span className="text-white/30 text-[9px]">{member.onlineStatus?.toLowerCase()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </ReportTableCell>
+                <ReportTableCell>
+                  <StatusBadge text={member.role} color={ROLE_COLORS[member.role] || "#60a5fa"} />
+                </ReportTableCell>
+                <ReportTableCell><span className="text-blue-400 font-bold">{member.assigned}</span></ReportTableCell>
+                <ReportTableCell><span className="text-emerald-400 font-bold">{member.closed}</span></ReportTableCell>
+                <ReportTableCell><span className="text-purple-400 font-bold">{member.messages}</span></ReportTableCell>
+                <ReportTableCell>
+                  <StatusBadge
+                    text={`${member.resolutionRate}%`}
+                    color={Number(member.resolutionRate) >= 90 ? "#4ade80" : Number(member.resolutionRate) >= 70 ? "#fbbf24" : "#ef4444"}
+                  />
+                </ReportTableCell>
+              </ReportTableRow>
+            );
+          })}
+        </ReportTable>
+      </ReportCard>
 
-      {/* Comment Log */}
-      <Card title="Comment Log">
-        <Table
-          headers={["Timestamp", "Commented By", "Contact ID", "Contact Name", "Comment"]}
-          data={commentLogData.slice((commentCurrentPage - 1) * commentItemsPerPage, commentCurrentPage * commentItemsPerPage)}
-        />
-        <PaginationControls
-          totalItems={totalCommentItems}
-          itemsPerPage={commentItemsPerPage}
-          currentPage={commentCurrentPage}
-          setCurrentPage={setCommentCurrentPage}
-        />
-      </Card>
-    </div>
+      {/* Activity Log */}
+      <ReportCard
+        title="Recent Activity Log"
+        tooltip="กิจกรรมล่าสุดของทีม — ดึงจาก ActivityLog"
+        actions={<ExportCSVButton data={activityLogs} filename="activity_log" />}
+      >
+        <ReportTable headers={["Timestamp", "Agent", "Action", "Details"]}>
+          {paginatedLogs.length > 0 ? (
+            paginatedLogs.map((log, i) => (
+              <ReportTableRow key={i}>
+                <ReportTableCell><span className="text-white/40 text-xs">{log.timestamp}</span></ReportTableCell>
+                <ReportTableCell><span className="text-white font-bold">{log.user}</span></ReportTableCell>
+                <ReportTableCell><span className="text-white/60">{log.action}</span></ReportTableCell>
+                <ReportTableCell>
+                  {log.newValue ? (
+                    <span className="text-[#BE7EC7] font-medium text-xs">{log.newValue}</span>
+                  ) : log.chatSessionId ? (
+                    <span className="text-[#BE7EC7] font-medium text-xs">Session #{log.chatSessionId}</span>
+                  ) : (
+                    <span className="text-white/20 text-xs">—</span>
+                  )}
+                </ReportTableCell>
+              </ReportTableRow>
+            ))
+          ) : null}
+        </ReportTable>
+        <ReportPagination totalItems={activityLogs.length} itemsPerPage={itemsPerPage} currentPage={currentPage} setCurrentPage={setCurrentPage} />
+      </ReportCard>
+    </ReportPageWrapper>
   );
 }

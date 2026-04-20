@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter, usePathname, useSearchParams } from "next/navigation"; // 🔥 เพิ่ม useSearchParams
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import Pusher from "pusher-js"; 
 
@@ -17,7 +17,7 @@ import Image from "next/image";
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams(); // 🔥 ดึง query string ปัจจุบัน
+  const searchParams = useSearchParams(); 
   const { data: session, status, update } = useSession();
 
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -64,11 +64,28 @@ export default function Sidebar() {
       const savedData = localStorage.getItem("onechat_data");
       if (savedData) {
         const chats = JSON.parse(savedData);
-        // ดึงเฉพาะแชทที่เป็น NEW
-        const newChats = chats.filter((chat) => chat.status?.toUpperCase() === "NEW" || chat.status === "New Chat");
+        
+        // 🚨 แก้ไขตรงนี้: ให้ Sidebar เช็คข้อมูลข้อความด้วยว่า "แอดมินตอบหรือยัง"
+        // ถ้าแอดมินตอบไปแล้ว ให้ถีบมันออกจาก Notification ทันที!
+        const newChats = chats.filter((chat) => {
+          const hasAgentReplied = chat.messages?.some(
+            (m) => String(m.from || "").toUpperCase() === "ME" || 
+                   String(m.from || "").toUpperCase() === "AGENT" || 
+                   String(m.sender_type || "").toUpperCase() === "AGENT" || 
+                   String(m.sender_type || "").toUpperCase() === "ADMIN"
+          );
+          
+          let displayStatus = chat.status?.toUpperCase() || "OPEN";
+          // ถ้ามีแอดมินตอบแล้ว ให้ถือว่าเป็น OPEN
+          if (hasAgentReplied && displayStatus === "NEW") {
+            displayStatus = "OPEN";
+          }
+          
+          return displayStatus === "NEW" || displayStatus === "NEW CHAT";
+        });
         
         const formattedNotifications = newChats.map((chat) => ({
-          id: chat.id, // ID สำคัญมาก! ต้องเช็คให้ดี
+          id: chat.id, 
           name: chat.name,
           profile: chat.imgUrl,
           platform: chat.platform || chat.channel,
@@ -219,7 +236,6 @@ export default function Sidebar() {
     };
   }, [status, session?.user?.email, pathname]);
 
-  // 🔥 2. แยก useEffect สำหรับ Pusher 
   useEffect(() => {
     let pusher;
     let wsChannel;
@@ -267,43 +283,43 @@ export default function Sidebar() {
                     if (activeWsId) {
                         wsChannel = pusher.subscribe(`workspace-${activeWsId}`);
                         
-                        // 🔥 ดักจับข้อความลูกค้าปกติ (แก้ไขให้ฉลาดขึ้น และจัดการ ID ซ้ำซ้อน)
                         wsChannel.bind('webhook-event', function(data) { 
-                            if (data.action === "SYNC_MESSAGE" && data.from === "customer") {
-                                setNotifications((prev) => {
-                                    // 💡 บังคับดึง ID ที่ถูกต้อง (หลังบ้านอาจส่งมาเป็น id หรือ chatId)
-                                    const targetId = parseInt(data.chatId || data.id);
-                                    if(!targetId) return prev;
+                            if (data.action === "SYNC_MESSAGE") {
+                                const targetId = parseInt(data.chatId || data.id);
+                                if (!targetId) return;
 
-                                    const existingIndex = prev.findIndex(n => parseInt(n.id) === targetId);
-                                    
-                                    if (existingIndex > -1) {
-                                        // 💡 ถ้าเป็นห้องแชทเดิมในกระดิ่ง ให้อัปเดตข้อความใหม่ล่าสุด แล้วดันขึ้นบนสุด! ไม่งอกใหม่!
-                                        const updated = [...prev];
-                                        updated[existingIndex] = { 
-                                            ...updated[existingIndex], 
-                                            message: data.text || data.message, 
-                                            time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) 
-                                        };
-                                        const [moved] = updated.splice(existingIndex, 1);
-                                        return [moved, ...updated]; 
-                                    }
-                                    return prev;
-                                });
+                                // 🚨 ดักจับเวลาแอดมินตอบแชท ให้ลบการแจ้งเตือนจุดแดงทันที!
+                                if (data.from === "AGENT" || data.sender_type === "AGENT" || data.sender_type === "ADMIN") {
+                                    setNotifications((prev) => prev.filter((item) => parseInt(item.id) !== targetId));
+                                } 
+                                // ถ้าลูกค้าทักมาใหม่ อัปเดตกระดิ่ง
+                                else if (data.from === "customer" || data.sender_type === "CUSTOMER") {
+                                    setNotifications((prev) => {
+                                        const existingIndex = prev.findIndex(n => parseInt(n.id) === targetId);
+                                        if (existingIndex > -1) {
+                                            const updated = [...prev];
+                                            updated[existingIndex] = { 
+                                                ...updated[existingIndex], 
+                                                message: data.text || data.message, 
+                                                time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) 
+                                            };
+                                            const [moved] = updated.splice(existingIndex, 1);
+                                            return [moved, ...updated]; 
+                                        }
+                                        return prev;
+                                    });
+                                }
                             }
                         });
                         
-                        // 🔥 ดักฟังสัญญาณลูกค้ารายใหม่ (New Chat)
                         wsChannel.bind('new-customer-chat', function(data) {
                             setNotifications((prev) => {
-                                // 💡 บังคับดึง ID ที่ถูกต้อง
                                 const targetId = parseInt(data.id || data.chatId);
                                 if(!targetId) return prev;
 
                                 const existingIndex = prev.findIndex(n => parseInt(n.id) === targetId);
                                 
                                 if (existingIndex > -1) {
-                                    // 💡 ถ้าคนเดิมทักมาซ้ำ ไม่งอกอันใหม่! อัปเดตข้อความแล้วดันขึ้นบนสุด
                                     const updated = [...prev];
                                     updated[existingIndex] = { 
                                       ...updated[existingIndex], 
@@ -313,7 +329,6 @@ export default function Sidebar() {
                                     const [moved] = updated.splice(existingIndex, 1);
                                     return [moved, ...updated];
                                 }
-                                // ถ้ายังไม่มีในกระดิ่ง ถึงจะสร้างอันใหม่ครับ พร้อมใส่ ID ให้เป๊ะ!
                                 return [{...data, id: targetId}, ...prev];
                             });
                         });
@@ -593,11 +608,12 @@ export default function Sidebar() {
                     isOpen={openDropdown === "Report"}
                     onToggle={() => setOpenDropdown(openDropdown === "Report" ? null : "Report")}
                     links={[
-                      { href: "/Report/contacts", label: "Contacts" },
+                      { href: "/Report", label: "Overview" },
+                      { href: "/Report/contacts", label: "Contacts & Channels" },
                       { href: "/Report/conversation", label: "Conversations" },
-                      { href: "/Report/message", label: "Messages" },
-                      { href: "/Report/responses", label: "Responses" },
+                      { href: "/Report/responses", label: "Responses & SLA" },
                       { href: "/Report/users", label: "Team Performance" },
+                      { href: "/Report/aitoken", label: "AI Usage" },
                     ]}
                     pathname={pathname}
                   />
@@ -708,7 +724,7 @@ export default function Sidebar() {
       </div>
 
       {showNotifications && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-end p-4 sm:p-6 pointer-events-none">
+        <div className="fixed inset-0 z-[9999] flex items-start justify-end p-4 sm:p-6 pointer-events-none">
           <div
             className="absolute inset-0 bg-black/40 pointer-events-auto"
             onClick={() => setShowNotifications(false)}
@@ -773,17 +789,13 @@ export default function Sidebar() {
                         <div
                           key={n.id}
                           onClick={() => {
-                            // ปิดกล่อง Noti
                             setShowNotifications(false);
                             
-                            // 🔥 ลบ Noti ออกจากจอทันทีที่กด! 
                             setNotifications((prev) => prev.filter((item) => parseInt(item.id) !== parseInt(n.id)));
 
-                            // 🚨 จุดสำคัญแก้บัคแชทรีเซ็ต: ใช้ router.push แบบรับ query ไม่ใช่โหลดใหม่หมด
                             const url = new URL(window.location.href);
                             const currentId = url.searchParams.get("id");
                             
-                            // ถ้าเป็นแชทเดิมที่เปิดอยู่ ไม่ต้องไปโหลดใหม่
                             if(currentId !== String(n.id)) {
                                 router.push(`/chat/allchat?id=${n.id}`);
                             }

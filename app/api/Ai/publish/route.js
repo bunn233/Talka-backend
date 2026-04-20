@@ -1,11 +1,28 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 export async function POST(req) {
     try {
+        // 1. ดึง Session เพื่อหาว่าใครกำลังใช้งานอยู่
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        // 2. ดึงข้อมูล User เพื่อเอา current_workspace_id
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+            select: { current_workspace_id: true }
+        });
+
+        if (!user?.current_workspace_id) {
+            return NextResponse.json({ error: "Workspace not found" }, { status: 400 });
+        }
+
         const body = await req.json();
         
-        // สังเกตว่าเราเพิ่ม id เข้ามารับค่าด้วย
         const { 
             id, name, emoji, greetingMsg, instructions, tone, 
             guardrails, leadGen, handover, isPublished 
@@ -14,7 +31,16 @@ export async function POST(req) {
         let savedAgent;
 
         if (id) {
-            // ถ้ามี ID แสดงว่า "กด Edit มาจากหน้าแรก" ให้ทำการอัปเดตข้อมูลเดิม (Update)
+            // 🚨 ป้องกันความปลอดภัย: ตรวจสอบก่อนว่าบอทตัวนี้เป็นของ Workspace เราจริงๆ
+            const existingAgent = await prisma.aiAgent.findUnique({ 
+                where: { id: parseInt(id) } 
+            });
+
+            if (!existingAgent || existingAgent.workspace_id !== user.current_workspace_id) {
+                return NextResponse.json({ error: "ไม่มีสิทธิ์แก้ไข AI Agent ตัวนี้" }, { status: 403 });
+            }
+
+            // ถ้าตรวจสอบผ่านแล้วค่อยอัปเดต
             savedAgent = await prisma.aiAgent.update({
                 where: { id: parseInt(id) },
                 data: {
@@ -23,9 +49,10 @@ export async function POST(req) {
                 }
             });
         } else {
-            // ถ้าไม่มี ID แสดงว่า "สร้างใหม่ (Create Custom)"
+            // 🟢 ตอนสร้างใหม่ ต้องแนบ workspace_id เสมอ
             savedAgent = await prisma.aiAgent.create({
                 data: {
+                    workspace_id: user.current_workspace_id, // 👈 เพิ่มบรรทัดนี้แล้ว!
                     name: name || "Talka AI",
                     emoji: emoji || "🤖",
                     greeting: greetingMsg || "สวัสดีค่ะ",
@@ -34,7 +61,7 @@ export async function POST(req) {
                     guardrails: guardrails || "",
                     lead_gen: leadGen || {},
                     handover: handover || {},
-                    is_published: isPublished || true,
+                    is_published: isPublished ?? true, // ใช้ ?? เผื่อกรณีเค้าส่งค่า false มา
                 }
             });
         }

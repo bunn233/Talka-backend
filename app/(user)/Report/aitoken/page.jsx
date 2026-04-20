@@ -1,238 +1,164 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
-import { DateRange } from "react-date-range";
-import { format } from "date-fns";
+
+import React, { useState } from "react";
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { Cpu, Coins, TrendingUp, Sparkles, BarChart3 } from "lucide-react";
 
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { BarChart3, Coins, TrendingUp, Calendar } from "lucide-react";
+  StatsCard, ReportCard, ReportTable, ReportTableRow, ReportTableCell,
+  ReportDatePicker, ReportPageWrapper, ChartContainer,
+  StatusBadge, CustomTooltip, ExportCSVButton, ReportSkeleton,
+  useReportData, CHART_COLORS, CHART_THEME,
+} from "@/app/components/Report/ReportShared";
 
-import "react-date-range/dist/styles.css";
-import "react-date-range/dist/theme/default.css";
-
-// 🟢 [BACKEND NOTE]: นำข้อมูล Mock เหล่านี้ไปเป็น Initial State เพื่อให้หน้าเว็บไม่พังตอนรอ API
-const initialMockChartData = [
-  { day: "dec 27", tokens: 3200 },
-  { day: "dec 28", tokens: 5000 },
-  { day: "dec 29", tokens: 4100 },
-  { day: "dec 30", tokens: 8000 },
-  { day: "dec 31", tokens: 6200 },
-];
-
-const initialMockBreakdown = [
-  { id: 1, feature: "Support Agent", tokens: 32500, cost: 2.44 },
-  { id: 2, feature: "Receptionist", tokens: 50100, cost: 4.08 },
-  { id: 3, feature: "Sales Agent", tokens: 62700, cost: 5.93 },
-];
-
-export default function AiToken() {
+export default function AiTokenReport() {
+  // ตั้งค่าวันที่เริ่มต้น (7 วันย้อนหลัง)
+  const sevenDaysAgo = new Date(); 
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
   const [range, setRange] = useState([
-    {
-      startDate: new Date("2025-12-27"),
-      endDate: new Date("2025-12-31"),
-      key: "selection",
-    },
+    { startDate: sevenDaysAgo, endDate: new Date(), key: "selection" },
   ]);
 
-  const [showCalendar, setShowCalendar] = useState(false);
-  const calendarRef = useRef(null);
+  // 🔗 เชื่อมต่อ API ผ่าน Hook (ดึงข้อมูลจาก /api/reports/aitoken)
+  const { data, isLoading } = useReportData("/api/reports/aitoken", range);
 
-  // 🟢 [BACKEND NOTE]: สร้าง State รับข้อมูลจาก API แทนการ Fix ค่าตายตัว
-  const [chartData, setChartData] = useState(initialMockChartData);
-  const [breakdownData, setBreakdownData] = useState(initialMockBreakdown);
-  const [stats, setStats] = useState({
-    totalTokens: 145300,
-    todayTokens: 6720,
-    estimatedCost: 12.45,
-  });
+  if (isLoading) return <ReportSkeleton />;
 
-  // 🟢 [BACKEND NOTE]: useEffect ตัวนี้จะทำงานทุกครั้งที่ผู้ใช้เลือกวันที่ใน Calendar ใหม่
-  // ให้ยิง API ไปขอข้อมูลสถิติของช่วงวันที่นั้นๆ 
-  useEffect(() => {
-    const fetchTokenStats = async () => {
-      try {
-        const start = format(range[0].startDate, "yyyy-MM-dd");
-        const end = format(range[0].endDate, "yyyy-MM-dd");
+  // เตรียมข้อมูลจาก API
+  const chartData = data?.chartData || [];
+  const breakdown = data?.breakdown || [];
 
-        // 🟢 โค้ดตัวอย่างสำหรับการยิง API จริง:
-        // const response = await fetch(`/api/tokens/stats?start=${start}&end=${end}`);
-        // const data = await response.json();
-        // 
-        // setChartData(data.chart);
-        // setStats({
-        //    totalTokens: data.total,
-        //    todayTokens: data.today,
-        //    estimatedCost: data.cost
-        // });
-        // setBreakdownData(data.breakdown);
+  // คำนวณค่าพลังงาน (KPIs)
+  const totalTokens = breakdown.reduce((s, d) => s + (Number(d.tokens) || 0), 0);
+  const totalCost = breakdown.reduce((s, d) => s + (Number(d.cost) || 0), 0);
+  const todayTokens = chartData.length > 0 ? chartData[chartData.length - 1].tokens : 0;
+  const avgPerDay = chartData.length > 0 ? Math.round(totalTokens / chartData.length) : 0;
 
-        console.log(`Fetching data for range: ${start} to ${end}`);
-      } catch (error) {
-        console.error("Failed to fetch token stats:", error);
-      }
-    };
+  // เตรียมข้อมูล Pie Chart
+  const pieData = breakdown.map((b, i) => ({
+    name: b.feature,
+    value: b.tokens,
+    // ใช้ Modulo เพื่อให้สีวนลูปถ้า Feature เยอะกว่าจำนวนสี
+    color: Object.values(CHART_COLORS)[i % Object.values(CHART_COLORS).length],
+  }));
 
-    fetchTokenStats();
-  }, [range]); // ทำงานใหม่ทุกครั้งที่ range เปลี่ยน
-
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
-        setShowCalendar(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const chartFontSize = "12px";
-
-  // ==========================================================
-  // UI ส่วนล่างนี้ไม่มีการดัดแปลงคลาสใดๆ แต่เปลี่ยนค่า Fix เป็นตัวแปร State แทน
-  // ==========================================================
   return (
-    <>
-      <div className="w-full h-full p-2 md:p-4">
-        <div
-          className="bg-[rgba(32,41,59,0.25)]
-          border border-[rgba(254,253,253,0.5)]
-          backdrop-blur-xl rounded-3xl shadow-2xl
-          pt-7 px-6 h-full flex flex-col text-white"
-        >
-          {/* Calendar Selector */}
-          <div className="relative mb-6" ref={calendarRef}>
-            <button
-              onClick={() => setShowCalendar((s) => !s)}
-              className="flex items-center gap-2 bg-white/10 border border-white/20 px-4 py-2 rounded-xl backdrop-blur-sm"
-            >
-              <Calendar size={16} />
-              {format(range[0].startDate, "MMM dd, yyyy")} -{" "}
-              {format(range[0].endDate, "MMM dd, yyyy")}
-            </button>
-
-            {showCalendar && (
-              <div className="absolute top-12 z-30">
-                <div className="transform scale-90 origin-top-left bg-white rounded-xl shadow-xl">
-                  <DateRange
-                    editableDateInputs
-                    onChange={(item) => setRange([item.selection])}
-                    moveRangeOnFirstSelection={false}
-                    ranges={range}
-                  />
-
-                  <button
-                    onClick={() => setShowCalendar(false)}
-                    className="w-full bg-purple-500 py-2 text-white rounded-b-xl"
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Stats Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white/10 rounded-2xl p-4 border border-white/20 flex items-center gap-4">
-              <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-                <Coins className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm opacity-80">Total Tokens</p>
-                <p className="text-xl font-bold">{stats.totalTokens.toLocaleString()}</p>
-              </div>
-            </div>
-
-            <div className="bg-white/10 rounded-2xl p-4 border border-white/20 flex items-center gap-4">
-              <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-                <TrendingUp className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm opacity-80">Tokens Today</p>
-                <p className="text-xl font-bold">{stats.todayTokens.toLocaleString()}</p>
-              </div>
-            </div>
-
-            <div className="bg-white/10 rounded-2xl p-4 border border-white/20 flex items-center gap-4">
-              <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-                <BarChart3 className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm opacity-80">Estimated Cost</p>
-                <p className="text-xl font-bold">${stats.estimatedCost.toFixed(2)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Chart */}
-          <div className="bg-white/10 rounded-2xl p-4 border border-white/20 mb-6 h-[32vh]">
-            <p className="mb-2 opacity-80">Token Usage</p>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={chartData}>
-                <XAxis
-                  dataKey="day"
-                  stroke="#fff"
-                  style={{ fontSize: chartFontSize }}
-                />
-                <YAxis stroke="#fff" style={{ fontSize: chartFontSize }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(255,255,255,0.1)",
-                    backdropFilter: "blur(8px)",
-                    borderRadius: "12px",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                  }}
-                  labelStyle={{ fontSize: chartFontSize, color: "#fff" }}
-                  itemStyle={{ fontSize: chartFontSize, color: "#fff" }}
-                  formatter={(value) => [
-                    `${value.toLocaleString()} tokens`,
-                    "Tokens",
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="tokens"
-                  stroke="#fff"
-                  strokeWidth={2}
-                />
-              </LineChart>
+    <ReportPageWrapper
+      title="AI Usage Report"
+      subtitle="Token Consumption Analytics"
+      icon={Cpu}
+      headerActions={<ReportDatePicker range={range} setRange={setRange} />}
+      kpiCards={
+        <>
+          <StatsCard label="Total Tokens" value={totalTokens.toLocaleString()} icon={Coins} color="#BE7EC7" subtitle="in selected period" />
+          <StatsCard label="Today's Usage" value={todayTokens.toLocaleString()} icon={Sparkles} color="#4ade80" subtitle="tokens consumed" />
+          <StatsCard label="Avg. Per Day" value={avgPerDay.toLocaleString()} icon={TrendingUp} color="#60a5fa" subtitle="tokens/day" />
+          <StatsCard label="Estimated Cost" value={`$${totalCost.toFixed(3)}`} icon={BarChart3} color="#fbbf24" subtitle="USD total" />
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <ReportCard title="Token Usage Trend" tooltip="ปริมาณ Token ที่ใช้ต่อวัน" className="xl:col-span-2">
+          <ChartContainer height={320}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="gTokens" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_COLORS.purple} stopOpacity={0.4} />
+                    <stop offset="100%" stopColor={CHART_COLORS.purple} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="day" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+                <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="tokens" name="Tokens" stroke={CHART_COLORS.purple} strokeWidth={2.5} fillOpacity={1} fill="url(#gTokens)" />
+              </AreaChart>
             </ResponsiveContainer>
-          </div>
+          </ChartContainer>
+        </ReportCard>
 
-          {/* Breakdown Table */}
-          <div className="bg-white/10 rounded-2xl p-4 border border-white/20 h-fit overflow-auto">
-            <p className="mb-4 opacity-80">Usage Breakdown</p>
-
-            <table className="w-full text-sm">
-              <thead className="opacity-70">
-                <tr className="text-left border-b border-white/20">
-                  <th className="py-2">Feature</th>
-                  <th className="py-2">Tokens</th>
-                  <th className="py-2">Cost</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {breakdownData.map((item) => (
-                  <tr key={item.id} className="border-b border-white/10 last:border-0">
-                    <td className="py-3">{item.feature}</td>
-                    <td>{item.tokens.toLocaleString()}</td>
-                    <td>${item.cost.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ReportCard title="Usage by Feature" tooltip="สัดส่วนการใช้ Token แยกตาม AI Feature">
+          <ChartContainer height={320}>
+            <ResponsiveContainer width="100%" height="65%">
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" stroke="none">
+                  {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex flex-col gap-2.5 mt-2">
+              {pieData.map((p, i) => (
+                <div key={i} className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                    <span className="text-white/50 text-xs font-medium">{p.name}</span>
+                  </div>
+                  <span className="text-white font-bold text-xs">
+                    {totalTokens > 0 ? ((p.value / totalTokens) * 100).toFixed(0) : "0"}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </ChartContainer>
+        </ReportCard>
       </div>
-    </>
+
+      <ReportCard
+        title="Usage Breakdown"
+        tooltip="รายละเอียดการใช้ Token แบ่งตาม Feature"
+        actions={<ExportCSVButton data={breakdown} filename="ai_usage" />}
+      >
+        <ReportTable headers={["AI Feature", "Tokens Used", "% of Total", "Estimated Cost", "Status"]}>
+          {breakdown.map((item, i) => {
+            const pct = totalTokens > 0 ? ((item.tokens / totalTokens) * 100).toFixed(1) : "0";
+            return (
+              <ReportTableRow key={i}>
+                <ReportTableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[#BE7EC7]/10 flex items-center justify-center">
+                      <Sparkles size={14} className="text-[#BE7EC7]" />
+                    </div>
+                    <span className="text-white font-bold">{item.feature}</span>
+                  </div>
+                </ReportTableCell>
+                <ReportTableCell><span className="text-white font-bold">{item.tokens.toLocaleString()}</span></ReportTableCell>
+                <ReportTableCell>
+                  <div className="flex items-center gap-2">
+                    <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-[#BE7EC7]" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-white/50 text-xs">{pct}%</span>
+                  </div>
+                </ReportTableCell>
+                <ReportTableCell><span className="text-emerald-400 font-bold">${Number(item.cost).toFixed(4)}</span></ReportTableCell>
+                <ReportTableCell>
+                  <StatusBadge text={item.tokens > 0 ? "Active" : "Inactive"} color={item.tokens > 0 ? "#4ade80" : "#60a5fa"} />
+                </ReportTableCell>
+              </ReportTableRow>
+            );
+          })}
+        </ReportTable>
+      </ReportCard>
+
+      <ReportCard title="Daily Consumption" tooltip="แท่งกราฟแสดงปริมาณ Token รายวัน">
+        <ChartContainer height={220}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} barSize={28}>
+              <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" />
+              <XAxis dataKey="day" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+              <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="tokens" name="Tokens" fill={CHART_COLORS.cyan} radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </ReportCard>
+    </ReportPageWrapper>
   );
 }

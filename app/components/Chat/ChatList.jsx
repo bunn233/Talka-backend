@@ -34,16 +34,31 @@ export default function ChatList({
     return colors[(name || "").charCodeAt(0) % colors.length] || "bg-[#BE7EC7]";
   };
 
+  // 🔥 1. ฟังก์ชันเลือกสีตาม Platform
+  const getPlatformColors = (platform) => {
+    const p = String(platform || "").toUpperCase();
+    switch (p) {
+      case "LINE":
+        return "bg-[#06c755]/10 text-[#06c755] border-[#06c755]/20";
+      case "FACEBOOK":
+        return "bg-[#0866FF]/10 text-[#0866FF] border-[#0866FF]/20";
+      case "INSTAGRAM":
+        return "bg-pink-500/10 text-pink-400 border-pink-500/20";
+      case "TELEGRAM":
+        return "bg-[#0088cc]/10 text-[#0088cc] border-[#0088cc]/20";
+      default:
+        return "bg-white/5 text-[#BE7EC7] border-white/5"; // สีเริ่มต้น
+    }
+  };
+
   const filteredChats = chats.filter(
     (chat) =>
       chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chat.lastMessage?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  // 🔥 ฟังก์ชันแก้บัคโดนดึงกลับแชทเดิม 
   const handleChatClick = (chat) => {
     onSelectChat(chat);
-    // เมื่อกดเลือกแชทปุ๊บ ให้แอบลบ ?id= ออกจากลิงก์ด้านบนแบบเนียนๆ
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       if (url.searchParams.has("id")) {
@@ -85,18 +100,15 @@ export default function ChatList({
                 time = `${time} น.`;
             }
 
-            // 🔥 ความฉลาดใหม่: เช็คว่า "แอดมินเคยตอบหรือยัง?"
             const hasAgentReplied = chat.messages?.some(
               (m) => m.from === "me" || m.from === "ADMIN" || m.from === "AGENT"
             );
 
-            // ถ้าแอดมินตอบแล้ว ให้ป้ายบังคับกลายเป็น OPEN ทันที (แม้ DB จะอัปเดตช้า)
             let displayStatus = chat.status?.toUpperCase() || "OPEN";
             if (hasAgentReplied && displayStatus === "NEW") {
               displayStatus = "OPEN";
             }
 
-            // จะเป็น New Chat ของแท้ก็ต่อเมื่อสถานะเป็น NEW และ แอดมินยังไม่ได้ตอบ!
             const isNewChat = displayStatus === "NEW" && !hasAgentReplied;
 
             const isImage =
@@ -145,10 +157,12 @@ export default function ChatList({
               ? "text-white font-bold"
               : "text-white/90 font-semibold";
 
+            const channelName = chat.channelName || chat.channel?.name || "";
+
             return (
               <div
                 key={chat.id}
-                onClick={() => handleChatClick(chat)} // 🔥 เรียกใช้ฟังก์ชันแก้บัคดึงกลับ
+                onClick={() => handleChatClick(chat)}
                 className={`p-3.5 border-b border-white/5 cursor-pointer transition-all ${
                   selectedId === chat.id
                     ? "bg-[#BE7EC7]/10 border-l-4 border-l-[#BE7EC7]"
@@ -158,7 +172,7 @@ export default function ChatList({
                 <div className="flex items-start justify-between w-full">
                   
                   {/* ฝั่งซ้าย: รูปและรายละเอียด */}
-                  <div className="flex items-start gap-3.5 flex-1 min-w-0 pr-3">
+                  <div className="flex items-start gap-3.5 flex-1 min-w-0 pr-2">
                     {/* Avatar */}
                     <div className="relative shrink-0 w-[52px] h-[52px]">
                       {chat.imgUrl ? (
@@ -216,8 +230,6 @@ export default function ChatList({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5">
-                        
-                        {/* 🔥 ถ้าเป็น New Chat จะโชว์ป้ายแดง NEW CHAT แทนป้ายเขียว OPEN ทันที */}
                         {isNewChat ? (
                           <span className="text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md border bg-red-500/10 text-red-500 border-red-500/20">
                             NEW CHAT
@@ -259,12 +271,22 @@ export default function ChatList({
                     </div>
                   </div>
 
-                  {/* ฝั่งขวา: แสดงแค่เวลาอย่างเดียว มุมขวาบน */}
-                  <div className="flex flex-col items-end shrink-0 pt-0.5">
+                  {/* ฝั่งขวา: เวลา และ ชื่อช่องทาง (Channel Name) */}
+                  <div className="flex flex-col items-end shrink-0 pt-0.5 justify-between min-h-[52px]">
                     {time && (
                       <span className="text-white/40 text-[10px] font-medium tracking-wide">
                         {time}
                       </span>
+                    )}
+                    
+                    {/* 🚨 2. นำฟังก์ชันสีมาครอบชื่อแชแนล */}
+                    {channelName && (
+                        <span 
+                          className={`text-[9px] max-w-[80px] truncate font-bold tracking-wide px-2 py-0.5 rounded mt-auto border ${getPlatformColors(chat.platform)}`} 
+                          title={channelName}
+                        >
+                           {channelName}
+                        </span>
                     )}
                   </div>
 

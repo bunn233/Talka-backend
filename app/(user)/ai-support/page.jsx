@@ -33,45 +33,53 @@ export default function AiSupportFlow() {
   const [selectedAgent, setSelectedAgent] = useState(null); 
 
   return (
-    // ลบ padding/margin ออกให้หมด เพื่อให้ Component ด้านในขยายเต็มกรอบพอดีกับ Sidebar
-    <div className="w-full h-full flex flex-col">
-      {currentStep === "intro" && (
-        <MainPage onStart={() => setCurrentStep("list")} />
-      )}
+    /** * 🟢 ปรับปรุงเลย์เอาต์หลักตรงนี้:
+     * - py-6 px-10 lg:px-14: เว้นระยะห่างจากขอบจอและ Sidebar
+     * - flex justify-center: จัดให้อยู่กึ่งกลางเสมอ
+     * - h-[94vh]: ความสูงมาตรฐานให้เหลือขอบล่างนิดหน่อยดูพรีเมียม
+     */
+    <div className="w-full h-[94vh] py-6 px-10 lg:px-14 flex justify-center overflow-hidden">
+      <div className="w-full max-w-[1800px] h-full flex flex-col animate-in fade-in duration-500">
+        
+        {currentStep === "intro" && (
+          <MainPage onStart={() => setCurrentStep("list")} />
+        )}
 
-      {currentStep === "list" && (
-        <TemplatesPage 
-          onBack={() => setCurrentStep("intro")}
-          oncreatenew={() => {
-            setSelectedAgent(null); 
-            setCurrentStep("builder");
-          }}
-          onEditAgent={(agent) => {
-            setSelectedAgent(agent); 
-            setCurrentStep("builder");
-          }}
-          onreceptionist={() => {
-            setSelectedAgent(TEMPLATES.receptionist); 
-            setCurrentStep("builder");
-          }}
-          onsalesagent={() => {
-            setSelectedAgent(TEMPLATES.sales);
-            setCurrentStep("builder");
-          }}
-          onsupportagent={() => {
-            setSelectedAgent(TEMPLATES.support);
-            setCurrentStep("builder");
-          }}
-        />
-      )}
+        {currentStep === "list" && (
+          <TemplatesPage 
+            onBack={() => setCurrentStep("intro")}
+            oncreatenew={() => {
+              setSelectedAgent(null); 
+              setCurrentStep("builder");
+            }}
+            onEditAgent={(agent) => {
+              setSelectedAgent(agent); 
+              setCurrentStep("builder");
+            }}
+            onreceptionist={() => {
+              setSelectedAgent(TEMPLATES.receptionist); 
+              setCurrentStep("builder");
+            }}
+            onsalesagent={() => {
+              setSelectedAgent(TEMPLATES.sales);
+              setCurrentStep("builder");
+            }}
+            onsupportagent={() => {
+              setSelectedAgent(TEMPLATES.support);
+              setCurrentStep("builder");
+            }}
+          />
+        )}
 
-      {currentStep === "builder" && (
-        <AgentBuilder 
-          initialData={selectedAgent}
-          onBack={() => setCurrentStep("list")}
-          onSaveSuccess={() => setCurrentStep("list")}
-        />
-      )}
+        {currentStep === "builder" && (
+          <AgentBuilder 
+            initialData={selectedAgent}
+            onBack={() => setCurrentStep("list")}
+            onSaveSuccess={() => setCurrentStep("list")}
+          />
+        )}
+        
+      </div>
     </div>
   );
 }

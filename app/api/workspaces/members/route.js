@@ -45,13 +45,21 @@ export async function GET(req) {
         });
 
         // 3. แปลงข้อมูลส่งกลับไปให้หน้าเว็บโชว์สวยๆ
-        const formattedMembers = members.map(m => ({
-            id: m.user.user_id,
-            name: m.user.username || "Unnamed User",
-            email: m.user.email,
-            role: m.role || "Employee",
-            profile_image: m.user.profile_image
-        }));
+        const formattedMembers = members.map(m => {
+            let role = m.role || "EMPLOYEE";
+            // Normalize role format เป็น uppercase และแปลง "Owner" -> "OWNER"
+            if (typeof role === "string") {
+                role = role.toUpperCase();
+                if (role === "OWNER") role = "OWNER";
+            }
+            return {
+                id: m.user.user_id,
+                name: m.user.username || "Unnamed User",
+                email: m.user.email,
+                role: role,
+                profile_image: m.user.profile_image
+            };
+        });
 
         return NextResponse.json(formattedMembers);
 

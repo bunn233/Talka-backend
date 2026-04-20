@@ -50,7 +50,7 @@ export default function ChatFitter({ onFilterChange, availableCompanies = [], on
             <div className="flex bg-[#120F18] p-1.5 rounded-2xl w-full lg:w-auto overflow-x-auto custom-scrollbar shadow-inner">
                 {[
                     { id: "radio1", label: "All Chat", value: "All" },
-                    { id: "radio2", label: "New Chat", value: "New Chat" },
+                    { id: "radio2", label: "New Chat", value: "New" },
                     { id: "radio3", label: "Open", value: "OPEN" },       // <-- เปลี่ยนจาก "Open" เป็น "OPEN"
                     { id: "radio4", label: "Closed", value: "CLOSED" },   // <-- เปลี่ยนจาก "Closed" เป็น "CLOSED"
                     { id: "radio5", label: "Pending", value: "PENDING" }, // <-- เปลี่ยนจาก "Pending" เป็น "PENDING"

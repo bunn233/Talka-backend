@@ -198,25 +198,56 @@ export default function ContactDetail({ contact, onClose, onSave, onDelete, AVAI
                         </div>
                     </div>
 
-                    {/* Tags */}
-                    <div>
-                        <label className={labelClass}>Applied Tags</label>
-                        <div className="relative">
-                            <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-                            <select 
-                                name="tags"
-                                value={formData.tags || ""} 
-                                onChange={handleChange}
-                                className={`${inputClass} pl-11 appearance-none`}
-                            >
-                                <option value="" className="bg-[#1F192E]">No Tag Selected</option> 
-                                {AVAILABLE_TAGS.map((tagObj) => (
-                                    <option key={tagObj.name} value={tagObj.name} className="bg-[#1F192E]">
-                                        {tagObj.emoji} {tagObj.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" size={16} />
+                    {/* Tags & Status Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className={labelClass}>Status</label>
+                            <div className="px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-white text-sm font-medium flex items-center justify-between">
+                                <span>{formData.status ? formData.status.charAt(0).toUpperCase() + formData.status.slice(1).toLowerCase() : "Open"}</span>
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
+                                    String(formData.status || "").toUpperCase() === 'OPEN' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                    String(formData.status || "").toUpperCase() === 'PENDING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                    String(formData.status || "").toUpperCase() === 'CLOSED' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                    'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                }`}>
+                                    {formData.status ? formData.status.charAt(0).toUpperCase() + formData.status.slice(1).toLowerCase() : "Open"}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={labelClass}>Applied Tags</label>
+                            <div className="relative">
+                                <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
+                                <select 
+                                    value={formData.tags && Array.isArray(formData.tags) && formData.tags.length > 0 ? String(formData.tags[0].id) : ""}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            const selectedTag = AVAILABLE_TAGS.find(t => String(t.id) === String(e.target.value));
+                                            if (selectedTag) {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    tags: [selectedTag]
+                                                }));
+                                            }
+                                        } else {
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                tags: []
+                                            }));
+                                        }
+                                    }}
+                                    className={`${inputClass} pl-11 appearance-none`}
+                                >
+                                    <option value="" className="bg-[#1F192E]">No Tag Selected</option> 
+                                    {AVAILABLE_TAGS.map((tagObj) => (
+                                        <option key={String(tagObj.id)} value={String(tagObj.id)} className="bg-[#1F192E]">
+                                            {tagObj.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" size={16} />
+                            </div>
                         </div>
                     </div>
 

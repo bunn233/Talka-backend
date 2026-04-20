@@ -2,398 +2,361 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
-import { useSession } from "next-auth/react"; // 🔥 1. ดึง useSession มาใช้ดึงชื่อผู้ใช้
+import { useRouter } from 'next/navigation';
+import { useSession } from "next-auth/react";
+import { 
+    MessageCircle, Link as LinkIcon, Users, 
+    BarChart3, Bot, Sparkles, ArrowRight, ShieldCheck, X, CheckCircle2
+} from 'lucide-react';
 import { GlassBackground } from '@/app/components/Shared/GlassBackground';
-import TutorialModal from '@/app/components/Modals/TutorialModal';
-import ClientLayout from "@/app/(user)/ClientLayout"; // 🔥 2. Import ClientLayout มาห่อหน้าเว็บ
+import ClientLayout from "@/app/(user)/ClientLayout";
 
-const tutorials = [
+// 📚 ข้อมูล Guide พร้อมเนื้อหาแบบละเอียด (Step-by-step)
+const guides = [
     {
-        id: 1,
-        title: "การเชื่อมต่อเเพลตฟอร์ม",
-        image: "/images/chanelPage.png",
-        description: "วิธีการเชื่อมต่อ Platform ต่างๆ เช่น Facebook, LINE เพื่อใช้งานระบบ Chat",
+        id: 'chat',
+        title: "การใช้งานระบบสนทนา (Chat)",
+        description: "ดูแชทจากทุกช่องทาง ตอบกลับลูกค้า และจัดการสถานะการสนทนา (รอตอบ, ตอบแล้ว)",
+        icon: MessageCircle,
+        href: "/chat/allchat",
+        color: "from-blue-400 to-cyan-400",
+        bgLight: "bg-blue-500/10",
+        isAdminOnly: false,
+        coverImage: "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80",
         steps: [
             {
-                title: "ไปที่ Menu Conect Platform",
-                description: "ด้านซ้ายมือของหน้าจอ คลิกที่ 'Conect Platform' ใน Admin Panel เพื่อเริ่มต้น",
-                image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop"
-            },
-            {
-                title: "เลือก Platform ที่ต้องการเชื่อมต่อ",
-                description: "คลิกที่ Platform ที่คุณต้องการเชื่อมต่อ เช่น Facebook หรือ LINE",
-                image: "https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=400&h=300&fit=crop"
-            },
-            {
-                title: "ทำตามขั้นตอนการตั้งค่า",
-                description: "หลังจากที่กดเลือก Platform แล้ว ให้ทำตามขั้นตอนที่แสดงบนหน้าจอเพื่อเชื่อมต่อ",
-                image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop"
-            },
-            {
-                title: "กดปุ่ม Connected Channels",
-                description: "ด้านขวาบนของหน้าจอ คลิกที่ปุ่ม เพื่อดูสถานะการเชื่อมต่อของ Platform ต่างๆ",
-                image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop"
-            },
-        ]
-    },
-    {
-        id: 2,
-        title: "การใช้งานระบบ Chat",
-        image: "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400&h=300&fit=crop",
-        description: "วิธีการใช้งานระบบ Chat และ Feature ต่างๆ ที่ช่วยให้การตอบลูกค้าง่ายขึ้น",
-        steps: [
-            {
-                title: "Chat list",
-                description: "หลังจากที่ลูกค้าส่งข้อความเข้ามา คุณจะเห็นรายชื่อการสนทนาด้านซ้ายมือหัวข้อ Chat List",
+                title: "1. หน้าต่างรวมแชท (Chat List)",
+                description: "เมื่อลูกค้าทักเข้ามาจากช่องทางใดก็ตาม ข้อความจะมารวมอยู่ที่แถบด้านซ้ายมือ คุณสามารถดูแชททั้งหมดได้ที่นี่",
                 image: "https://images.unsplash.com/photo-1553877522-43269d4ea984?w=400&h=300&fit=crop"
             },
             {
-                title: "การ Filter ข้อความ",
-                description: "ด้านบนของ Chat List คุณสามารถกรองข้อความตามสถานะ เช่น รอตอบ, ตอบแล้ว หรือ แบบ All",
+                title: "2. การคัดกรองข้อความ (Filtering)",
+                description: "ด้านบนของ Chat List คุณสามารถกรองข้อความตามสถานะ เช่น NEW (แชทใหม่รอตอบ), OPEN (กำลังคุย), หรือ CLOSED (ปิดงานแล้ว)",
                 image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400&h=300&fit=crop"
             },
             {
-                title: "ทดสอบและปรับปรุง",
-                description: "ทดสอบข้อความและปรับปรุงตามผลตอบรับจากผู้ใช้",
-                image: "https://images.unsplash.com/photo-1556155092-490a1ba16284?w=400&h=300&fit=crop"
-            }
-        ]
-    },
-    {
-        id: 3,
-        title: "การวิเคราะห์ข้อมูล",
-        image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop",
-        description: "ติดตามและวิเคราะห์ประสิทธิภาพของ Chatbot ของคุณ",
-        steps: [
-            {
-                title: "เข้าสู่แดชบอร์ด",
-                description: "คลิกที่เมนู 'รายงาน' เพื่อดูข้อมูลสถิติโดยรวม",
-                image: "https://images.unsplash.com/photo-1543286386-713bdd548da4?w=400&h=300&fit=crop"
-            },
-            {
-                title: "วิเคราะห์การสนทนา",
-                description: "ดูรายละเอียดการสนทนาและหาจุดที่ควรปรับปรุง",
-                image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop"
-            },
-            {
-                title: "ส่งออกรายงาน",
-                description: "ดาวน์โหลดรายงานเพื่อนำเสนอหรือเก็บเป็นข้อมูล",
-                image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop"
-            }
-        ]
-    },
-    {
-        id: 4,
-        title: "การเชื่อมต่อช่องทาง",
-        image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=400&h=300&fit=crop",
-        description: "เชื่อมต่อบอทของคุณกับ Facebook, LINE และช่องทางอื่นๆ",
-        steps: [
-            {
-                title: "เลือกช่องทาง",
-                description: "เลือกช่องทางที่ต้องการเชื่อมต่อจากรายการที่รองรับ",
-                image: "https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?w=400&h=300&fit=crop"
-            },
-            {
-                title: "ตั้งค่าการเชื่อมต่อ",
-                description: "ป้อน API Key และข้อมูลที่จำเป็นสำหรับการเชื่อมต่อ",
-                image: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=400&h=300&fit=crop"
-            },
-            {
-                title: "ทดสอบการทำงาน",
-                description: "ส่งข้อความทดสอบเพื่อยืนยันว่าการเชื่อมต่อสำเร็จ",
+                title: "3. การตอบโต้และส่งไฟล์",
+                description: "ในช่องพิมพ์ข้อความ คุณสามารถส่งข้อความ แนบรูปภาพ หรือใช้อีโมจิเพื่อสร้างความประทับใจให้ลูกค้าได้",
                 image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400&h=300&fit=crop"
             }
         ]
     },
     {
-        id: 5,
-        title: "การจัดการทีม",
-        image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=400&h=300&fit=crop",
-        description: "เพิ่มสมาชิกทีมและจัดการสิทธิ์การเข้าถึง",
+        id: 'ai',
+        title: "การสร้าง AI Agent",
+        description: "สร้างและฝึกฝน AI Agent ให้ตอบคำถามลูกค้าแทนพนักงานแบบอัตโนมัติ 24 ชม.",
+        icon: Bot,
+        href: "/ai-support",
+        color: "from-purple-400 to-pink-400",
+        bgLight: "bg-purple-500/10",
+        isAdminOnly: true,
+        coverImage: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&q=80",
         steps: [
             {
-                title: "เชิญสมาชิก",
-                description: "ส่งคำเชิญผ่านอีเมลให้สมาชิกทีมใหม่",
+                title: "1. เลือกเทมเพลต (Smart Templates)",
+                description: "เริ่มสร้าง AI ได้ง่ายๆ โดยเลือกเทมเพลตที่มีให้ เช่น Sales Agent หรือ Support Agent หรือสร้างใหม่จากศูนย์",
+                image: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=400&h=300&fit=crop"
+            },
+            {
+                title: "2. ป้อนคำสั่งและข้อห้าม (Prompt & Guardrails)",
+                description: "กำหนดหน้าที่หลัก โทนเสียง และข้อห้ามที่ AI ไม่ควรตอบ เพื่อให้บอทฉลาดและปลอดภัยต่อแบรนด์",
+                image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop"
+            },
+            {
+                title: "3. ทดสอบและนำไปใช้ (Test & Publish)",
+                description: "คุยทดสอบกับบอทในช่อง Live Test ด้านขวามือ หากพอใจแล้วให้กด Publish เพื่อเปิดใช้งานจริง",
+                image: "https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=400&h=300&fit=crop"
+            }
+        ]
+    },
+    {
+        id: 'connect',
+        title: "การเชื่อมต่อช่องทาง (Channels)",
+        description: "ตั้งค่าเชื่อมต่อ Facebook, LINE, Telegram เพื่อรวมแชทมาไว้ที่หน้าต่างเดียว",
+        icon: LinkIcon,
+        href: "/admin/channel",
+        color: "from-emerald-400 to-teal-400",
+        bgLight: "bg-emerald-500/10",
+        isAdminOnly: true,
+        coverImage: "/images/chanelPage.png",
+        steps: [
+            {
+                title: "1. เลือกแพลตฟอร์ม",
+                description: "คลิกเลือกแพลตฟอร์มที่คุณต้องการเชื่อมต่อ เช่น เพจ Facebook, LINE OA หรือบอท Telegram",
+                image: "https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?w=400&h=300&fit=crop"
+            },
+            {
+                title: "2. กรอกข้อมูล API",
+                description: "ใส่ Access Token หรือ Channel Secret ที่ได้จากแพลตฟอร์มนั้นๆ ลงในช่องที่กำหนดให้ถูกต้อง",
+                image: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=400&h=300&fit=crop"
+            },
+            {
+                title: "3. เปิดใช้งาน (Connected)",
+                description: "เมื่อเชื่อมต่อสำเร็จ สถานะจะเปลี่ยนเป็น Connected หลังจากนั้นข้อความของลูกค้าจะไหลเข้าสู่ระบบทันที",
+                image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop"
+            }
+        ]
+    },
+    {
+        id: 'report',
+        title: "รายงานและสถิติ (Reports)",
+        description: "วิเคราะห์ประสิทธิภาพของทีม ความเร็วในการตอบกลับ และข้อมูลของลูกค้า",
+        icon: BarChart3,
+        href: "/Report/conversation",
+        color: "from-amber-400 to-orange-400",
+        bgLight: "bg-amber-500/10",
+        isAdminOnly: true,
+        coverImage: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+        steps: [
+            {
+                title: "1. ภาพรวมการสนทนา",
+                description: "ดูสถิติจำนวนแชทที่เข้ามาในแต่ละวัน ช่วงเวลาที่ลูกค้าทักมาเยอะที่สุด เพื่อจัดเตรียมพนักงานให้พร้อม",
+                image: "https://images.unsplash.com/photo-1543286386-713bdd548da4?w=400&h=300&fit=crop"
+            },
+            {
+                title: "2. ประสิทธิภาพของทีม",
+                description: "เช็คความเร็วในการตอบกลับ (Response Time) ของพนักงานแต่ละคน เพื่อประเมินผลการทำงาน",
+                image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop"
+            }
+        ]
+    },
+    {
+        id: 'team',
+        title: "การจัดการทีม (Team)",
+        description: "เชิญพนักงานเข้าทีม กำหนดสิทธิ์การเข้าถึง และแบ่งแผนกในการดูแลลูกค้า",
+        icon: Users,
+        href: "/admin/usersetting",
+        color: "from-indigo-400 to-blue-500",
+        bgLight: "bg-indigo-500/10",
+        isAdminOnly: true,
+        coverImage: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&q=80",
+        steps: [
+            {
+                title: "1. เชิญสมาชิก (Invite)",
+                description: "เข้าไปที่เมนู Users ส่งคำเชิญผ่านอีเมลเพื่อให้พนักงานใหม่สามารถเข้าสู่ Workspace นี้ได้",
                 image: "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=400&h=300&fit=crop"
             },
             {
-                title: "กำหนดบทบาท",
-                description: "ตั้งค่าสิทธิ์การเข้าถึงตามบทบาทของแต่ละคน",
+                title: "2. กำหนดบทบาท (Role)",
+                description: "เลือกว่าจะให้เป็นพนักงานทั่วไป (Employee) หรือผู้ดูแลระบบ (Admin) เพื่อจำกัดการเข้าถึงเมนูต่างๆ",
                 image: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=400&h=300&fit=crop"
-            },
-            {
-                title: "ติดตามกิจกรรม",
-                description: "ดูประวัติการทำงานของสมาชิกในทีม",
-                image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&h=300&fit=crop"
             }
         ]
     }
 ];
 
-export default function Page() {
-    const { data: session } = useSession(); // 🔥 ดึงข้อมูลจาก Session แทนการใช้ useEffect
+export default function GuidePage() {
+    const { data: session } = useSession();
+    const router = useRouter();
+    
+    const [userRole, setUserRole] = useState("EMPLOYEE");
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedGuide, setSelectedGuide] = useState(null); // ควบคุม Modal
 
-    const [selectedCard, setSelectedCard] = useState(null);
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const userName = session?.user?.name || "Guest";
 
-    const userName = session?.user?.name || "Guest"; // 🔥 ใช้ชื่อจริงๆ จากระบบ
+    // ดึงสิทธิ์ User เพื่อแยกว่าควรเห็น Guide ของ Admin ไหม
+    useEffect(() => {
+        const fetchRole = async () => {
+            try {
+                const res = await fetch(`/api/users/profile`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const wsRes = await fetch("/api/users/current-workspace");
+                    
+                    if (wsRes.ok) {
+                        const wsData = await wsRes.json();
+                        const currentWsId = String(wsData.activeWorkspaceId);
+                        const userWorkspaces = data.workspaces || [];
+                        const currentWs = userWorkspaces.find((ws) => String(ws.id) === currentWsId);
+                        
+                        if (currentWs) {
+                            setUserRole(currentWs.role.toUpperCase());
+                        } else {
+                            setUserRole(data.profile.role.toUpperCase());
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch role");
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-    const openModal = (tutorial) => {
-        setSelectedCard(tutorial);
+        fetchRole();
+    }, []);
+
+    const isAdminOrOwner = userRole === "ADMIN" || userRole === "OWNER";
+    const visibleGuides = guides.filter(guide => !guide.isAdminOnly || isAdminOrOwner);
+
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
     };
 
-    const closeModal = () => {
-        setSelectedCard(null);
-    };
-
-    const nextCard = () => {
-        setCurrentIndex((prev) => (prev + 1) % tutorials.length);
-    };
-
-    const prevCard = () => {
-        setCurrentIndex((prev) => (prev - 1 + tutorials.length) % tutorials.length);
-    };
-
-    // ฟังก์ชันสำหรับคำนวณตำแหน่งการ์ดแบบวงกลม
-    const getCardPosition = (index) => {
-        const total = tutorials.length;
-        const diff = (index - currentIndex + total) % total;
-        const angle = (diff / total) * Math.PI * 2;
-        const radius = 550; 
-        const x = Math.sin(angle) * radius;
-        const z = Math.cos(angle) * radius - radius;
-        const rotateY = -(angle * 180) / Math.PI;
-        const position = diff <= total / 2 ? diff : diff - total;
-
-        return { x, z, rotateY, position, isCenter: diff === 0 };
-    };
-
-    const textVariants = {
-        hidden: { opacity: 0, y: 30, scale: 0.9 },
-        visible: {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            transition: { duration: 0.8, ease: "easeOut" }
-        }
+    const itemVariants = {
+        hidden: { opacity: 0, y: 20 },
+        visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
     };
 
     return (
-        // 🔥 3. ห่อทั้งหมดด้วย ClientLayout
         <ClientLayout>
-            <div className="h-[94vh] w-full overflow-hidden bg-[rgba(32,41,59,0.37)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl text-white relative flex flex-col items-center py-10">
-
-                <div className="fixed inset-0 pointer-events-none">
+            <div className="h-[94vh] w-full overflow-y-auto custom-scrollbar bg-[rgba(32,41,59,0.37)] border border-[rgba(254,253,253,0.5)] backdrop-blur-xl rounded-3xl shadow-2xl text-white relative px-6 py-10 md:px-12">
+                
+                {/* Background Effects */}
+                <div className="fixed inset-0 pointer-events-none overflow-hidden rounded-3xl z-0">
                     <div className="absolute inset-0 bg-[radial-linear(ellipse_at_top,var(--tw-gradient-stops))] from-[#1a1c3a] via-[#090a1a] to-[#000000]"></div>
-                    {/* ดาว */}
-                    <div className='absolute inset-0 opacity-40' style={{
-                        backgroundImage: 'radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 5px), radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 3px), radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 4px)',
-                        backgroundSize: '550px 550px, 350px 350px, 250px 250px',
-                        backgroundPosition: '0 0, 40px 60px, 130px 270px',
-                        animation: 'starsAnimation 120s linear infinite'
-                    }}></div>
-
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-purple-600/20 rounded-full blur-[150px] mix-blend-screen z-0"></div>
-                    <div className="absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-blue-500/10 rounded-full blur-[120px] mix-blend-screen z-0"></div>
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-purple-600/10 rounded-full blur-[150px] mix-blend-screen"></div>
                 </div>
 
-                <motion.div
-                    initial="hidden"
-                    animate="visible"
-                    className="text-center mb-10 relative z-10 mt-10"
-                >
-                    <motion.div variants={textVariants} className="inline-block relative">
-                        {/* ไอคอน */}
-                        <Sparkles className="absolute -top-6 -left-8 w-8 h-8 text-purple-400 animate-pulse" />
-                        <h1 className="text-[50px] font-bold leading-tight">
-                            <span className="block bg-clip-text text-transparent bg-linear-to-r from-white via-purple-200 to-blue-200 drop-shadow-[0_0_15px_rgba(190, 126, 199, 0.8)]">
-                                Welcome, "{userName}"
-                            </span>
-                            <span className="block text-[28px] font-light text-purple-200/80 mt-2">
-                                ยินดีต้อนรับเข้าสู่ Talka
-                            </span>
+                <div className="relative z-10 max-w-6xl mx-auto">
+                    {/* Header Section */}
+                    <div className="flex flex-col items-center text-center mb-12">
+                        <div className="inline-flex items-center justify-center p-3 bg-white/5 rounded-2xl border border-white/10 mb-6 shadow-inner">
+                            <Sparkles className="w-6 h-6 text-[#BE7EC7] animate-pulse" />
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+                            Welcome back, <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-300">{userName}</span>
                         </h1>
-                        <div className="h-1 w-40 mx-auto mt-6 bg-linear-to-r from-transparent via-purple-500 to-transparent rounded-full opacity-70"></div>
-                    </motion.div>
-                    <p className='text-lg font-semibold mt-6 text-purple-300 tracking-widest uppercase'>Tutorials</p>
-                </motion.div>
+                        <p className="text-white/50 text-lg max-w-xl">
+                            เลือกเมนูที่คุณต้องการเรียนรู้วิธีใช้งาน ระบบได้คัดกรองฟีเจอร์ที่ตรงกับสิทธิ์ของคุณไว้ให้แล้ว
+                        </p>
+                        
+                        {!isLoading && (
+                            <div className="mt-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold tracking-widest uppercase">
+                                <ShieldCheck size={14} className={isAdminOrOwner ? "text-amber-400" : "text-blue-400"} />
+                                <span className={isAdminOrOwner ? "text-amber-400" : "text-blue-400"}>
+                                    {userRole} ACCESS
+                                </span>
+                            </div>
+                        )}
+                    </div>
 
-                <div className="relative h-[450px] w-full flex items-center justify-center z-20 my-auto">
-                    {/* Navigation Buttons */}
-                    <motion.button
-                        whileHover={{ scale: 1.2, backgroundColor: "rgba(255,255,255,0.2)", boxShadow: "0 0 30px rgba(190, 126, 199, 0.8)" }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={prevCard}
-                        className="absolute left-[10%] z-30 bg-white/5 backdrop-blur-xl rounded-full p-5 transition-all shadow-[0_0_20px_rgba(190,126,199,0.3)] border border-white/20 group"
-                    >
-                        <ChevronLeft className="w-8 h-8 text-white group-hover:text-purple-200 transition-colors" />
-                    </motion.button>
-
-                    <motion.button
-                        whileHover={{ scale: 1.2, backgroundColor: "rgba(255,255,255,0.2)", boxShadow: "0 0 30px rgba(190, 126, 199, 0.8)" }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={nextCard}
-                        className="absolute right-[10%] z-30 bg-white/5 backdrop-blur-xl rounded-full p-5 transition-all shadow-[0_0_20px_rgba(190,126,199,0.3)] border border-white/20 group"
-                    >
-                        <ChevronRight className="w-8 h-8 text-white group-hover:text-purple-200 transition-colors" />
-                    </motion.button>
-
-                    {/* Cards Carousel */}
-                    <div className="relative w-full max-w-6xl h-full flex items-center justify-center"
-                        style={{
-                            perspective: "2500px", 
-                            perspectiveOrigin: "center center"
-                        }}
-                    >
-                        <AnimatePresence initial={false}>
-                            {tutorials.map((tutorial, index) => {
-                                const { x, z, rotateY, position, isCenter } = getCardPosition(index);
-
-                                return (
-                                    <motion.div
-                                        key={tutorial.id}
-                                        initial={{ scale: 0.5, opacity: 0, x: x, z: z - 200, rotateY: rotateY }}
-                                        animate={{
-                                            x: x,
-                                            z: z,
-                                            scale: isCenter ? 1 : 0.7,
-                                            opacity: isCenter ? 1 : 0.3, 
-                                            rotateY: rotateY,
-                                            zIndex: isCenter ? 20 : Math.round(10 - Math.abs(z) / 50),
-                                            filter: isCenter ? 'blur(0px) brightness(1.1) contrast(1.05)' : 'blur(5px) brightness(0.5) grayscale(20%)',
-                                        }}
-                                        exit={{
-                                            scale: 0.3,
-                                            opacity: 0,
-                                            x: x + (position < 0 ? -500 : 500),
-                                            z: z - 400,
-                                            rotateY: rotateY + (position < 0 ? -60 : 60),
-                                            transition: {
-                                                duration: 0.7,
-                                                ease: [0.25, 0.1, 0.25, 1],
-                                                type: "tween"
-                                            }
-                                        }}
-                                        transition={{
-                                            x: { type: "spring", stiffness: 50, damping: 20, mass: 1.2 },
-                                            z: { type: "spring", stiffness: 50, damping: 20, mass: 1.2 },
-                                            scale: { type: "spring", stiffness: 80, damping: 25 },
-                                            opacity: { duration: 0.5, ease: "easeInOut" },
-                                            rotateY: { type: "spring", stiffness: 50, damping: 25, mass: 1.5 },
-                                            filter: { duration: 0.5, ease: "easeInOut" }
-                                        }}
-                                        className="absolute w-[420px]"
-                                        style={{
-                                            pointerEvents: isCenter ? 'auto' : 'none',
-                                            transformStyle: "preserve-3d",
-                                            transformOrigin: 'center center',
-                                        }}
+                    {/* Guides Grid */}
+                    {isLoading ? (
+                        <div className="flex justify-center items-center py-20">
+                            <div className="w-10 h-10 border-4 border-[#BE7EC7] border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                    ) : (
+                        <motion.div 
+                            variants={containerVariants}
+                            initial="hidden"
+                            animate="visible"
+                            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                        >
+                            {visibleGuides.map((guide) => (
+                                <motion.div key={guide.id} variants={itemVariants}>
+                                    <GlassBackground 
+                                        className="h-full group hover:bg-white/10 border-white/10 hover:border-white/30 transition-all duration-300 cursor-pointer overflow-hidden"
+                                        onClick={() => setSelectedGuide(guide)} // 🔥 เปลี่ยนเป็นเปิด Modal แทน
                                     >
-                                        <motion.div
-                                            whileHover={isCenter ? {
-                                                scale: 1.05,
-                                                rotateY: 0,
-                                                z: 40,
-                                                boxShadow: "0 1px 100px -20px rgba(190, 126, 199, 0.8), 0 0 30px rgba(255,255,255,0.2) inset",
-                                                transition: {
-                                                    duration: 0.5,
-                                                    type: "spring",
-                                                    stiffness: 150,
-                                                    damping: 20
-                                                }
-                                            } : {}}
-                                            className="h-full rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
-                                            style={{
-                                                transformStyle: "preserve-3d",
-                                            }}
-                                        >
-                                            <GlassBackground className="h-full border-white/30 bg-white/10"
-                                                style={{
-                                                    transform: "translateZ(0)",
-                                                    backfaceVisibility: "hidden",
-                                                    background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.02))'
-                                                }}
-                                            >
-                                                <div className="relative h-64 overflow-hidden rounded-t-3xl group-hover:brightness-110 transition-all">
-                                                    <img
-                                                        src={tutorial.image}
-                                                        alt={tutorial.title}
-                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                    />
-                                                    <div className="absolute inset-0 bg-linear-to-t from-[#090a1a] via-transparent to-transparent opacity-60" />
-                                                </div>
+                                        <div className="p-6 flex flex-col h-full relative">
+                                            <div className={`absolute -right-10 -top-10 w-32 h-32 rounded-full blur-[50px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br ${guide.color}`} />
 
-                                                <div className="p-6 relative">
-                                                    <h3
-                                                        className="text-3xl font-bold mb-3 drop-shadow-lg"
-                                                        style={{
-                                                            background: 'linear-gradient(90deg, #fff, #a855f7, #3b82f6)',
-                                                            WebkitBackgroundClip: 'text',
-                                                            WebkitTextFillColor: 'transparent',
-                                                        }}
-                                                    >
-                                                        {tutorial.title}
-                                                    </h3>
-                                                    <p className="text-purple-100/80 mb-8 line-clamp-3 text-sm leading-relaxed font-light">
-                                                        {tutorial.description}
-                                                    </p>
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-6 border border-white/10 shadow-inner ${guide.bgLight}`}>
+                                                <guide.icon className="w-6 h-6 text-white" />
+                                            </div>
+                                            
+                                            <h3 className="text-xl font-bold mb-3 text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-white/70 transition-all">
+                                                {guide.title}
+                                            </h3>
+                                            
+                                            <p className="text-sm text-white/50 leading-relaxed flex-1">
+                                                {guide.description}
+                                            </p>
 
-                                                    {isCenter && (
-                                                        <motion.button
-                                                            initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                            transition={{ duration: 0.5, delay: 0.2, type: "spring" }}
-                                                            whileHover={{ scale: 1.05, boxShadow: "0 20px 50px rgba(168, 85, 247, 0.6)" }}
-                                                            whileTap={{ scale: 0.95 }}
-                                                            onClick={() => openModal(tutorial)}
-                                                            className="w-full bg-[rgba(190,126,199,0.56)] text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg relative overflow-hidden group"
-                                                        >
-                                                            <span className="relative z-10 flex items-center justify-center gap-2">
-                                                                เพิ่มเติม <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                                                            </span>
-                                                            <div className="absolute inset-0 h-full w-full bg-linear-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out" />
-                                                        </motion.button>
-                                                    )}
-                                                </div>
-                                            </GlassBackground>
-                                        </motion.div>
-                                    </motion.div>
-                                );
-                            })}
-                        </AnimatePresence>
-                    </div>
-
-                    {/* Dots Indicator */}
-                    <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2 flex gap-4 z-20 bg-black/20 backdrop-blur-md px-6 py-3 rounded-full border border-white/10">
-                        {tutorials.map((_, index) => (
-                            <motion.button
-                                key={index}
-                                onClick={() => setCurrentIndex(index)}
-                                animate={{
-                                    scale: currentIndex === index ? 1.5 : 1,
-                                    opacity: currentIndex === index ? 1 : 0.4,
-                                    background: currentIndex === index
-                                        ? 'linear-gradient(90deg, #a855f7, #ec4899)'
-                                        : 'rgba(255, 255, 255, 0.5)',
-                                    boxShadow: currentIndex === index ? "0 0 20px rgba(168, 85, 247, 1)" : "none"
-                                }}
-                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                className={`w-3 h-3 rounded-full transition-all`}
-                            />
-                        ))}
-                    </div>
+                                            <div className="mt-8 flex items-center text-sm font-bold text-white/40 group-hover:text-[#BE7EC7] transition-colors">
+                                                ดูวิธีการใช้งาน <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                                            </div>
+                                        </div>
+                                    </GlassBackground>
+                                </motion.div>
+                            ))}
+                        </motion.div>
+                    )}
                 </div>
 
+                {/* 🔥 Modal แสดงรายละเอียด (Tutorial Modal) */}
                 <AnimatePresence>
-                    {selectedCard && (
-                        <TutorialModal
-                            tutorial={selectedCard}
-                            onClose={closeModal}
-                        />
+                    {selectedGuide && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-12">
+                            {/* Backdrop */}
+                            <motion.div 
+                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                                onClick={() => setSelectedGuide(null)}
+                            />
+
+                            {/* Modal Content */}
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+                                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                className="relative w-full max-w-4xl max-h-full bg-[#120F1D] border border-white/10 rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+                            >
+                                {/* Header / Cover Image */}
+                                <div className="relative h-48 md:h-64 shrink-0 bg-white/5">
+                                    <img src={selectedGuide.coverImage} className="w-full h-full object-cover" alt="Cover" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-[#120F1D] via-[#120F1D]/60 to-transparent" />
+                                    <button 
+                                        onClick={() => setSelectedGuide(null)}
+                                        className="absolute top-4 right-4 w-10 h-10 bg-black/40 hover:bg-red-500/80 text-white rounded-full flex items-center justify-center transition-colors border border-white/10"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                    <div className="absolute bottom-6 left-6 md:left-10 flex items-center gap-4">
+                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border border-white/10 shadow-lg ${selectedGuide.bgLight}`}>
+                                            <selectedGuide.icon className="w-8 h-8 text-white" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-2xl md:text-3xl font-bold text-white">{selectedGuide.title}</h2>
+                                            <p className="text-sm text-white/60 mt-1">{selectedGuide.description}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Steps Content */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10">
+                                    <h3 className="text-lg font-bold mb-6 text-white flex items-center gap-2">
+                                        <CheckCircle2 className="text-[#BE7EC7]" size={20} /> ขั้นตอนการใช้งาน
+                                    </h3>
+                                    
+                                    <div className="space-y-8">
+                                        {selectedGuide.steps.map((step, idx) => (
+                                            <div key={idx} className="flex flex-col md:flex-row gap-6 items-start bg-white/[0.02] border border-white/5 rounded-2xl p-6">
+                                                <div className="w-full md:w-1/3 shrink-0">
+                                                    <img src={step.image} className="w-full h-32 md:h-40 object-cover rounded-xl border border-white/10 shadow-md" alt={`Step ${idx + 1}`} />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h4 className="text-lg font-bold text-purple-200 mb-2">{step.title}</h4>
+                                                    <p className="text-sm text-white/60 leading-relaxed">{step.description}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Footer Button (Go to Page) */}
+                                <div className="p-6 border-t border-white/5 bg-[#0B0914] shrink-0 flex justify-end">
+                                    <button
+                                        onClick={() => router.push(selectedGuide.href)}
+                                        className="px-8 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(147,51,234,0.3)] hover:scale-105"
+                                    >
+                                        ไปที่หน้านี้ (Start Using) <ArrowRight size={16} />
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
                     )}
                 </AnimatePresence>
+
             </div>
+            <style jsx global>{`
+                .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+            `}</style>
         </ClientLayout>
     );
 }

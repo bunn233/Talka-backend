@@ -2,15 +2,23 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Tooltip } from "react-tooltip";
 import Picker from "emoji-picker-react";
-import { Image as ImageIcon,  Users } from "lucide-react";
+// 🔥 เพิ่ม ZoomIn สำหรับไอคอนส่องดูรูป
+import { Users, Eye, Bot, ChevronDown, Power, Check, Wand2, X, ZoomIn } from "lucide-react";
 import Pusher from "pusher-js";
 
 const getInitials = (name) => {
   if (!name) return "?";
   const parts = name.trim().split(" ");
   if (parts.length === 1) return parts[0][0].toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
 };
+
+const BUILT_IN_PROMPTS = [
+  { id: "1", name: "เปลี่ยนโทนเสียง", action: "ปรับข้อความให้สุภาพ เป็นมืออาชีพ และมีความเห็นอกเห็นใจลูกค้า" },
+  { id: "2", name: "แปลเป็นภาษาอังกฤษ", action: "Translate this text to professional English" },
+  { id: "3", name: "แก้ไขการสะกดคำ", action: "แก้ไขไวยากรณ์และการสะกดคำภาษาไทยให้ถูกต้อง 100%" },
+  { id: "4", name: "ย่อให้สั้นลง", action: "สรุปข้อความให้สั้น กระชับ และตรงประเด็นที่สุด" }
+];
 
 export default function ChatMessage({
   chat,
@@ -35,14 +43,94 @@ export default function ChatMessage({
   const [files, setFiles] = useState([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  // 🔥 State สำหรับเก็บรูปภาพที่ถูกคลิกดูขนาดเต็ม
+  const [selectedPreview, setSelectedPreview] = useState(null);
+
   const [showViewers, setShowViewers] = useState(false);
   const viewersDropdownRef = useRef(null);
   const [activeViewers, setActiveViewers] = useState([]);
 
-  // ID ประจำแท็บ
+  const [agentsList, setAgentsList] = useState([]);
+  const [activeAiAgent, setActiveAiAgent] = useState(null);
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const agentDropdownRef = useRef(null);
+
+  const [showPromptPicker, setShowPromptPicker] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
+  const promptPickerRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/Ai/agents')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setAgentsList(data.filter(agent => agent.is_published));
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  const toggleAiMode = async (agent) => {
+    if (!agent) {
+      setActiveAiAgent(null);
+      setShowAgentDropdown(false);
+      await fetch(`/api/chats/${chat.id}/ai-mode`, {
+        method: 'POST',
+        body: JSON.stringify({ ai_agent_id: null })
+      });
+    } else {
+      setActiveAiAgent(agent);
+      setShowAgentDropdown(false);
+      await fetch(`/api/chats/${chat.id}/ai-mode`, {
+        method: 'POST',
+        body: JSON.stringify({ ai_agent_id: agent.id })
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target)) {
+        setShowAgentDropdown(false);
+      }
+      if (promptPickerRef.current && !promptPickerRef.current.contains(event.target)) {
+        setShowPromptPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleAiRewrite = async (action) => {
+    const currentText = textareaRef.current?.value;
+    if (!currentText?.trim()) return alert("กรุณาพิมพ์ข้อความก่อนใช้ AI ช่วยเกลาคำ");
+
+    setIsRewriting(true);
+    setShowPromptPicker(false);
+
+    try {
+      const res = await fetch('/api/Ai/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: currentText, action: action })
+      });
+      
+      const data = await res.json();
+      if (data.text && textareaRef.current) {
+        textareaRef.current.value = data.text;
+      } else {
+        alert("เกิดข้อผิดพลาดในการแปลงข้อความ");
+      }
+    } catch (error) {
+      console.error("Rewrite error:", error);
+      alert("ไม่สามารถเชื่อมต่อกับ AI ได้");
+    } finally {
+      setIsRewriting(false);
+    }
+  };
+
   const tabIdRef = useRef(Math.random().toString(36).substring(7));
 
-  // ข้อมูลตัวเองแบบ Real-time
   const myViewerDataRef = useRef({
     tabId: tabIdRef.current,
     id: currentUser?.email || currentUser?.id || `guest-${Date.now()}`,
@@ -58,7 +146,6 @@ export default function ChatMessage({
     const wsId =
       workspaceId || chat?.channel?.workspace_id || chat?.workspace_id || 1;
 
-    // อัปเดตตัวเองลงลิสต์
     setActiveViewers([{ ...myViewerDataRef.current }]);
 
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
@@ -79,10 +166,9 @@ export default function ChatMessage({
           },
           action: actionType,
         }),
-      }).catch(() => {});
+      }).catch(() => { });
     };
 
-    // ดึงข้อมูลยศ/รูปตัวเองให้ล่าสุดเสมอ
     const fetchMyProfile = () => {
       fetch("/api/users/profile")
         .then((res) => res.json())
@@ -113,7 +199,7 @@ export default function ChatMessage({
             broadcastPresence("UPDATE");
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     };
 
     fetchMyProfile();
@@ -161,6 +247,7 @@ export default function ChatMessage({
   const hasAgentReplied = messages.some(
     (m) =>
       String(m.from || "").toUpperCase() === "ME" ||
+      String(m.from || "").toUpperCase() === "AGENT" ||
       String(m.sender_type || "").toUpperCase() === "AGENT" ||
       String(m.sender_type || "").toUpperCase() === "ADMIN",
   );
@@ -176,11 +263,15 @@ export default function ChatMessage({
   const handleSendClick = async () => {
     const text = textareaRef.current?.value;
     if (!text?.trim() && files.length === 0) return;
+    
+    const filesToSend = [...files];
+    
+    // Clear Input
     textareaRef.current.value = "";
     setHeight(100);
-    const filesToSend = [...files];
     setFiles([]);
     setShowEmojiPicker(false);
+    
     if (onSendMessage) await onSendMessage(chat.id, text, filesToSend);
   };
 
@@ -204,204 +295,243 @@ export default function ChatMessage({
   }, []);
 
   const handleAttachClick = () => fileInputRef.current.click();
+
   const handleFileChange = (event) => {
-    setFiles((prev) => [...prev, ...Array.from(event.target.files)]);
-    event.target.value = "";
+    const selectedFiles = Array.from(event.target.files).map(file => {
+      Object.assign(file, {
+        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null
+      });
+      return file;
+    });
+    setFiles((prev) => [...prev, ...selectedFiles]);
+    event.target.value = ""; 
   };
-  const handleRemoveFile = (index) =>
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+
+  const handleRemoveFile = (indexToRemove) => {
+    setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
 
   const getStatusColorClass = (status) => {
     switch (status?.toUpperCase()) {
-      case "OPEN":
-        return "bg-green-500/10 text-green-500 border-green-500/20";
-      case "PENDING":
-        return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
+      case "OPEN": return "bg-green-500/10 text-green-500 border-green-500/20";
+      case "PENDING": return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
       case "CLOSED":
-      case "RESOLVED":
-        return "bg-red-500/10 text-red-500 border-red-500/20";
-      case "NEW":
-        return "bg-red-500/10 text-red-500 border-red-500/20";
-      default:
-        return "bg-white/5 text-white/50 border-white/10";
+      case "RESOLVED": return "bg-red-500/10 text-red-500 border-red-500/20";
+      case "NEW": return "bg-red-500/10 text-red-500 border-red-500/20";
+      default: return "bg-white/5 text-white/50 border-white/10";
     }
   };
 
   return (
-    <div className="flex-1 min-w-0 h-full bg-[#1E1B29] border border-[#BE7EC7]/10 rounded-3xl shadow-xl p-5 flex flex-col overflow-hidden">
+    <div className="flex-1 min-w-0 h-full bg-[#1E1B29] border border-[#BE7EC7]/10 rounded-3xl shadow-xl p-5 flex flex-col overflow-hidden relative z-0">
+
       {/* --- Header --- */}
-      <div className="shrink-0 flex items-center justify-between border-b border-white/5 pb-4 mb-4 gap-3">
+      <div className="shrink-0 flex items-center justify-between border-b border-white/5 pb-4 mb-4 gap-3 relative z-20">
+
+        {/* Chat Info (Left) */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="relative w-12 h-12 shrink-0">
             {chat?.imgUrl ? (
-              <img
-                src={chat.imgUrl}
-                alt={chat?.name}
-                className="w-full h-full rounded-3xl object-cover shadow-sm bg-white/5 border border-white/10"
-              />
+              <img src={chat.imgUrl} alt={chat?.name} className="w-full h-full rounded-3xl object-cover shadow-sm bg-white/5 border border-white/10" />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-[#BE7EC7] to-[#8a55b5] rounded-4xl flex items-center justify-center text-2xl shadow-lg font-bold text-white border border-white/10">
+              <div className="w-full h-full bg-gradient-to-br from-[#BE7EC7] to-[#8a55b5] rounded-2xl flex items-center justify-center text-2xl shadow-lg font-bold text-white border border-white/10">
                 {getInitials(chat?.name)}
               </div>
             )}
             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center bg-[#1E1B29] border border-white/10 shadow-lg">
-              {chat?.platform === "INSTAGRAM" ? (
-                <i className="fa-brands fa-instagram text-pink-500 text-[10px]"></i>
-              ) : chat?.platform === "FACEBOOK" ? (
-                <i className="fa-brands fa-facebook text-blue-500 text-[10px]"></i>
-              ) : chat?.platform === "LINE" ? (
-                <i className="fa-brands fa-line text-green-500 text-[10px]"></i>
-              ) : chat?.platform === "TELEGRAM" ? (
-                <i className="fa-brands fa-telegram text-[#0088cc] text-[10px]"></i>
-              ) : null}
+              {chat?.platform === "INSTAGRAM" && <i className="fa-brands fa-instagram text-pink-500 text-[10px]"></i>}
+              {chat?.platform === "FACEBOOK" && <i className="fa-brands fa-facebook text-blue-500 text-[10px]"></i>}
+              {chat?.platform === "LINE" && <i className="fa-brands fa-line text-green-500 text-[10px]"></i>}
+              {chat?.platform === "TELEGRAM" && <i className="fa-brands fa-telegram text-[#0088cc] text-[10px]"></i>}
             </div>
           </div>
 
           <div className="min-w-0 flex-1 flex flex-col items-start">
-            <h2 className="text-white font-semibold text-lg truncate leading-tight mb-1">
-              {chat?.name}
-            </h2>
-            {isNewChat ? (
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border bg-red-500/10 text-red-500 border-red-500/20">
-                NEW CHAT
-              </span>
-            ) : (
-              <span
-                className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${getStatusColorClass(displayStatus)}`}
-              >
-                {displayStatus}
-              </span>
-            )}
+            <h2 className="text-white font-semibold text-lg truncate leading-tight mb-1">{chat?.name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              {isNewChat ? (
+                <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border bg-red-500/10 text-red-500 border-red-500/20">NEW CHAT</span>
+              ) : (
+                <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${getStatusColorClass(displayStatus)}`}>{displayStatus}</span>
+              )}
+              
+              {/* Tag Badges */}
+              {(chat?.tags || []).map((tagObj, i) => {
+                const tagName = typeof tagObj === 'object' ? tagObj.name : tagObj;
+                if (!tagName) return null;
+
+                const tagColor = typeof tagObj === 'object' ? tagObj.color : '#BE7EC7';
+                const tagEmoji = typeof tagObj === 'object' ? tagObj.emoji : '';
+
+                return (
+                  <span
+                    key={`${tagName}-${i}`}
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md border flex items-center gap-1 whitespace-nowrap"
+                    style={{ color: tagColor, borderColor: `${tagColor}40`, backgroundColor: `${tagColor}10` }}
+                  >
+                    {tagEmoji && <span>{tagEmoji}</span>}
+                    {tagName}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* 🔥 ฝั่งขวา: แสดงรูปโปรไฟล์ตัวเองซ้อนกับไอคอนคนดู */}
-        <div
-          className="relative shrink-0 flex items-center pl-4 border-l border-white/10"
-          ref={viewersDropdownRef}
-        >
-          <div
-            className="flex items-center cursor-pointer hover:scale-105 transition-transform duration-200"
-            onClick={() => setShowViewers(!showViewers)}
-          >
-            <div className="flex items-center -space-x-4">
-              {/* รูปตัวเอง (YOU) */}
-              <div className="w-9 h-9 rounded-full border-2 border-[#1E1B29] bg-[#2a2438] overflow-hidden shadow-lg relative z-20">
-                {myViewerDataRef.current.image ? (
-                  <img
-                    src={myViewerDataRef.current.image}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-tr from-[#BE7EC7] to-purple-500">
-                    {getInitials(myViewerDataRef.current.name)}
-                  </div>
-                )}
-              </div>
+        {/* Header Right: AI Auto-Reply & Viewers */}
+        <div className="flex items-center gap-4 shrink-0">
 
-              {/* ไอคอนคนอื่น (ถ้ามีคนดูมากกว่า 1 คน) */}
-              {uniqueViewers.length > 1 && (
-                <div className="w-9 h-9 rounded-full border-2 border-[#1E1B29] bg-[#BE7EC7] flex items-center justify-center shadow-md relative z-10">
-                  <Users size={14} className="text-white" />
-                  {otherViewersCount > 0 && (
-                    <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black text-white w-4 h-4 rounded-full flex items-center justify-center border border-[#1E1B29]">
-                      {uniqueViewers.length}
+          <div className="relative" ref={agentDropdownRef}>
+            <button
+              onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all duration-300 shadow-sm
+                ${activeAiAgent
+                  ? 'bg-purple-600/20 border-purple-500/50 text-purple-300 hover:bg-purple-600/30'
+                  : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80'
+                }`}
+            >
+              <Bot size={16} className={activeAiAgent ? 'animate-pulse' : ''} />
+              <div className="flex flex-col items-start text-left">
+                <span className="text-[10px] font-black uppercase tracking-wider leading-none">
+                  {activeAiAgent ? 'AI ACTIVE' : 'AI AUTO-REPLY'}
+                </span>
+                <span className="text-[10px] leading-none opacity-80 mt-0.5">
+                  {activeAiAgent ? activeAiAgent.name : 'Off'}
+                </span>
+              </div>
+              <ChevronDown size={14} className={`ml-1 transition-transform ${showAgentDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showAgentDropdown && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-[#1E1B29] border border-[#BE7EC7]/20 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in zoom-in-95 duration-200">
+                <div className="p-3 bg-white/5 border-b border-white/5">
+                  <span className="text-[10px] text-white/40 uppercase font-black tracking-[0.15em] ml-1">Assign AI to Chat</span>
+                </div>
+                <div className="max-h-[280px] overflow-y-auto custom-scrollbar p-1.5">
+
+                  <button
+                    onClick={() => toggleAiMode(null)}
+                    className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center gap-3 mb-1
+                      ${!activeAiAgent ? 'bg-red-500/10 text-red-400' : 'text-white/60 hover:bg-white/5 hover:text-white'}
+                    `}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg shrink-0 ${!activeAiAgent ? 'bg-red-500/20' : 'bg-white/5'}`}>
+                      <Power size={14} />
+                    </div>
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <span className="font-bold text-xs truncate">Manual Mode</span>
+                      <span className="text-[9px] opacity-60 truncate font-medium">หยุด AI ให้พนักงานตอบเอง</span>
+                    </div>
+                    {!activeAiAgent && <Check size={14} className="text-red-400 shrink-0" strokeWidth={3} />}
+                  </button>
+
+                  <div className="my-2 border-t border-white/5" />
+
+                  {agentsList.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-white/40">No active agents found.</div>
+                  ) : (
+                    agentsList.map((agent) => (
+                      <button
+                        key={agent.id}
+                        onClick={() => toggleAiMode(agent)}
+                        className={`w-full text-left p-2.5 rounded-xl transition-all flex items-center gap-3 mb-1
+                          ${activeAiAgent?.id === agent.id ? 'bg-[#BE7EC7]/20 text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'}
+                        `}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg shrink-0 ${activeAiAgent?.id === agent.id ? 'bg-[#BE7EC7]' : 'bg-white/5'}`}>
+                          {agent.emoji}
+                        </div>
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <span className="font-bold text-xs truncate">{agent.name}</span>
+                          <span className="text-[9px] opacity-60 truncate font-medium line-clamp-1">{agent.instructions || 'AI Assistant'}</span>
+                        </div>
+                        {activeAiAgent?.id === agent.id && <Check size={14} className="text-[#BE7EC7] shrink-0" strokeWidth={3} />}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Viewers Area */}
+          <div className="relative shrink-0 flex items-center pl-4 border-l border-white/10 z-10" ref={viewersDropdownRef}>
+            <div className="flex items-center cursor-pointer hover:scale-105 transition-transform duration-200" onClick={() => setShowViewers(!showViewers)}>
+              <div className="flex items-center -space-x-4">
+                <div className="w-9 h-9 rounded-full border-2 border-[#1E1B29] bg-[#2a2438] overflow-hidden shadow-lg relative z-20">
+                  {myViewerDataRef.current.image ? (
+                    <img src={myViewerDataRef.current.image} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-tr from-[#BE7EC7] to-purple-500">
+                      {getInitials(myViewerDataRef.current.name)}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-
-            <div className="ml-3 text-white/30 hover:text-white/70 transition-colors">
-            </div>
-          </div>
-
-          {showViewers && (
-            <div className="absolute right-0 top-full mt-3 w-52 bg-[#1E1B29] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-              <p className="text-[9px] text-[#BE7EC7] font-bold uppercase px-2 mb-2 mt-1 tracking-widest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                กำลังดูแลแชทนี้ ({uniqueViewers.length})
-              </p>
-
-              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
-                {uniqueViewers.map((viewer, idx) => {
-                  let roleColor = "text-white/40";
-                  if (viewer.role === "OWNER")
-                    roleColor = "text-yellow-400 font-semibold";
-                  if (viewer.role === "ADMIN")
-                    roleColor = "text-rose-400 font-semibold";
-
-                  return (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-2 hover:bg-white/5 rounded-xl transition-colors"
-                    >
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-white text-sm font-medium truncate">
-                          {viewer.name}
-                        </span>
-                        <span className={`text-[10px] truncate ${roleColor}`}>
-                          {viewer.role || "EMPLOYEE"}
-                        </span>
+                {uniqueViewers.length > 1 && (
+                  <div className="w-9 h-9 rounded-full border-2 border-[#1E1B29] bg-[#BE7EC7] flex items-center justify-center shadow-md relative z-10">
+                    <Users size={14} className="text-white" />
+                    {otherViewersCount > 0 && (
+                      <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black text-white w-4 h-4 rounded-full flex items-center justify-center border border-[#1E1B29]">
+                        {uniqueViewers.length}
                       </div>
-                      {viewer.tabId === tabIdRef.current ? (
-                        <span className="text-[8px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-black tracking-wider shrink-0">
-                          YOU
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                )}
               </div>
+              <div className="ml-3 text-white/30 hover:text-white/70 transition-colors"><Eye size={18} /></div>
             </div>
-          )}
+
+            {showViewers && (
+              <div className="absolute right-0 top-full mt-3 w-52 bg-[#1E1B29] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                <p className="text-[9px] text-[#BE7EC7] font-bold uppercase px-2 mb-2 mt-1 tracking-widest flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>กำลังดูแลแชทนี้ ({uniqueViewers.length})</p>
+                <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+                  {uniqueViewers.map((viewer, idx) => {
+                    let roleColor = "text-white/40";
+                    if (viewer.role === "OWNER") roleColor = "text-yellow-400 font-semibold";
+                    if (viewer.role === "ADMIN") roleColor = "text-rose-400 font-semibold";
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-2 hover:bg-white/5 rounded-xl transition-colors">
+                        <div className="flex flex-col min-w-0"><span className="text-white text-sm font-medium truncate">{viewer.name}</span><span className={`text-[10px] truncate ${roleColor}`}>{viewer.role || "EMPLOYEE"}</span></div>
+                        {viewer.tabId === tabIdRef.current && <span className="text-[8px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-black tracking-wider shrink-0">YOU</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* --- Chat Messages --- */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 text-white/90 pr-2 mb-4 flex flex-col">
+      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 text-white/90 pr-2 mb-4 flex flex-col relative z-0">
+        {activeAiAgent && (
+          <div className="w-full flex justify-center mb-4">
+            <div className="bg-purple-600/10 border border-purple-500/20 rounded-xl px-4 py-2 text-xs text-purple-300 font-medium flex items-center gap-2">
+              <Bot size={14} className="animate-pulse" />
+              AI Agent <b>{activeAiAgent.name}</b> {activeAiAgent.emoji} กำลังดำเนินการตอบอัตโนมัติ
+            </div>
+          </div>
+        )}
+
         {messages && messages.length > 0 ? (
           messages.map((msg, index) => {
             const fromStr = String(msg.from || "").toUpperCase();
-            const isMe =
-              fromStr === "ME" ||
-              String(msg.sender_type).toUpperCase() === "AGENT" ||
-              String(msg.sender_type).toUpperCase() === "ADMIN";
+            const senderTypeStr = String(msg.sender_type || "").toUpperCase();
+            const isMe = fromStr === "ME" || fromStr === "AGENT" || fromStr === "ADMIN" || senderTypeStr === "AGENT" || senderTypeStr === "ADMIN";
             const text = msg.text || "";
-            const isImage =
-              msg.type === "IMAGE" ||
-              text.includes("/api/") ||
-              text.includes("cdn") ||
-              text.includes("fbcdn");
-
-            let displayName = isMe
-              ? msg.senderName || currentUser?.name || "Admin"
-              : chat?.name || "ลูกค้า";
+            const isImage = msg.type === "IMAGE" || text.includes("/api/") || text.includes("cdn") || text.includes("fbcdn");
+            let displayName = isMe ? msg.senderName || currentUser?.name || "Admin" : chat?.name || "ลูกค้า";
 
             return (
-              <div
-                key={index}
-                className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-              >
-                <div
-                  className={`flex items-baseline gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}
-                >
-                  <span
-                    className={`text-[10px] font-bold tracking-wide ${isMe ? "text-[#BE7EC7]" : "text-white/50"}`}
-                  >
-                    {displayName}
-                  </span>
+              <div key={index} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                <div className={`flex items-baseline gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                  <span className={`text-[10px] font-bold tracking-wide ${isMe ? "text-[#BE7EC7]" : "text-white/50"}`}>{displayName}</span>
                   <span className="text-[9px] text-white/30">{msg.time}</span>
                 </div>
-                <div
-                  className={`max-w-[70%] shadow-sm ${isImage ? "p-1 rounded-2xl" : "px-4 py-2.5 rounded-2xl text-sm break-words"} ${isMe ? "bg-[#BE7EC7] text-white rounded-br-sm" : "bg-white/5 border border-white/10 text-white/90 rounded-bl-sm"}`}
-                >
+                <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm break-words ${isMe ? "bg-[#BE7EC7] text-white rounded-br-sm shadow-lg shadow-[#BE7EC7]/10" : "bg-white/5 border border-white/10 text-white/90 rounded-bl-sm"}`}>
                   {isImage ? (
-                    <img
-                      src={text}
-                      className="max-w-[200px] sm:max-w-xs h-auto object-cover rounded-xl"
-                      loading="lazy"
-                    />
+                    <img src={text} className="max-w-[200px] sm:max-w-xs h-auto object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setSelectedPreview(text)} loading="lazy" />
                   ) : (
                     <span className="whitespace-pre-wrap">{text}</span>
                   )}
@@ -410,72 +540,162 @@ export default function ChatMessage({
             );
           })
         ) : (
-          <div className="flex items-center justify-center h-full text-white/30 text-sm">
-            No messages yet
-          </div>
+          <div className="flex items-center justify-center h-full text-white/30 text-sm italic">No messages yet</div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* --- Input Area --- */}
-      <div className="relative shrink-0 border-t border-white/5 pt-4">
-        {showEmojiPicker && (
-          <div className="absolute bottom-full right-0 mb-2 z-50">
-            <Picker
-              onEmojiClick={(emojiData) => {
-                const editor = textareaRef.current;
-                if (!editor) return;
-                const startPos = editor.selectionStart;
-                const endPos = editor.selectionEnd;
-                editor.value =
-                  editor.value.substring(0, startPos) +
-                  emojiData.emoji +
-                  editor.value.substring(endPos);
-                editor.focus();
-              }}
-              theme="dark"
+      <div className="relative shrink-0 border-t border-white/5 pt-4 z-10 transition-all duration-300">
+        {activeAiAgent ? (
+          <div className="w-full flex flex-col items-center justify-center py-6 bg-gradient-to-r from-purple-500/5 via-[#BE7EC7]/10 to-purple-500/5 rounded-2xl border border-[#BE7EC7]/20 shadow-inner">
+            <Bot className="text-[#BE7EC7] mb-2 animate-bounce" size={28} />
+            <p className="text-white font-bold text-sm mb-1">{activeAiAgent.emoji} {activeAiAgent.name} กำลังดูแลลูกค้ารายนี้</p>
+            <p className="text-white/40 text-xs mb-4">ระบบตอบกลับอัตโนมัติกำลังทำงาน (พนักงานไม่สามารถพิมพ์ได้)</p>
+            <button
+              onClick={() => toggleAiMode(null)}
+              className="px-6 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-xl text-xs font-bold transition-all border border-red-500/20 hover:border-red-500 flex items-center gap-2"
+            >
+              <Power size={14} /> หยุด AI และเข้าตอบแชทเอง
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="relative flex flex-col">
+              
+              {/* 🔥 กล่อง Preview รูปภาพและไฟล์ก่อนส่ง (Glassmorphism UI) */}
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-4 mb-3 p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] max-h-40 overflow-y-auto custom-scrollbar">
+                  {files.map((file, index) => (
+                    <div key={index} className="relative w-20 h-20 rounded-xl overflow-hidden border border-white/10 group shadow-md bg-black/40 shrink-0">
+                      {file.type.startsWith('image/') ? (
+                        <>
+                          <img src={file.preview} alt="preview" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                          {/* เลเยอร์ Hover สำหรับกดดูรูปเต็ม */}
+                          <div 
+                            className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-all duration-300"
+                            onClick={() => setSelectedPreview(file.preview)}
+                          >
+                            <ZoomIn size={24} className="text-white drop-shadow-md transform scale-50 group-hover:scale-100 transition-transform duration-300" />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center">
+                          <i className="fa-solid fa-file text-white/50 mb-1 text-xl"></i>
+                          <span className="text-[9px] text-white/70 w-full line-clamp-2 leading-tight">
+                            {file.name}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* ปุ่มกากบาทลบไฟล์ */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // 👈 ป้องกันไม่ให้ทะลุไปเปิดรูปใหญ่
+                          handleRemoveFile(index);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-75 group-hover:scale-100 shadow-lg z-10"
+                      >
+                        <X size={12} strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showEmojiPicker && (
+                <div className="absolute bottom-[110%] right-0 z-50 shadow-2xl rounded-2xl overflow-hidden">
+                  <Picker onEmojiClick={(emojiData) => { const editor = textareaRef.current; if (!editor) return; const startPos = editor.selectionStart; const endPos = editor.selectionEnd; editor.value = editor.value.substring(0, startPos) + emojiData.emoji + editor.value.substring(endPos); editor.focus(); }} theme="dark" />
+                </div>
+              )}
+              
+              {/* 🪄 เมนู AI Prompt */}
+              {showPromptPicker && (
+                <div ref={promptPickerRef} className="absolute bottom-[110%] right-[110px] w-64 bg-[#1E1B29] border border-[#BE7EC7]/30 rounded-2xl shadow-2xl p-2 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                  <p className="text-[10px] text-[#BE7EC7] font-bold uppercase tracking-widest px-2 mb-2">AI Copilot</p>
+                  <div className="space-y-1">
+                    {BUILT_IN_PROMPTS.map(p => (
+                      <button 
+                        key={p.id}
+                        onClick={() => handleAiRewrite(p.action)}
+                        className="w-full text-left p-2.5 hover:bg-white/5 rounded-xl transition-colors group flex items-start gap-2"
+                      >
+                        <Wand2 size={14} className="text-white/40 group-hover:text-[#BE7EC7] shrink-0 mt-0.5 transition-colors" />
+                        <div>
+                          <p className="text-sm font-medium text-white/90 group-hover:text-white">{p.name}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isRewriting && (
+                <div className="absolute inset-0 bg-[#1E1B29]/60 backdrop-blur-[2px] z-10 rounded-xl flex items-center justify-center border border-[#BE7EC7]/20">
+                  <div className="flex items-center gap-2 text-[#BE7EC7] font-bold text-sm bg-[#1E1B29] px-4 py-2 rounded-full border border-[#BE7EC7]/30 shadow-lg">
+                    <Wand2 size={16} className="animate-pulse" /> AI กำลังช่วยเกลาข้อความ...
+                  </div>
+                </div>
+              )}
+
+              <textarea
+                ref={textareaRef}
+                onKeyDown={handleKeyDown}
+                style={{ height: `${Math.min(height, 150)}px` }}
+                className="w-full p-3.5 bg-white/5 text-white text-sm rounded-xl border border-white/10 focus:border-[#BE7EC7] focus:ring-1 focus:ring-[#BE7EC7] outline-none resize-none custom-scrollbar transition-all disabled:opacity-50"
+                placeholder="Type a message..."
+                disabled={isRewriting}
+              />
+            </div>
+
+            <div className="flex gap-2 mt-3 items-center">
+              <input type="file" multiple ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+              <button onClick={handleAttachClick} disabled={isRewriting} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5 disabled:opacity-50"><i className="fa-solid fa-paperclip"></i></button>
+              
+              <button 
+                onClick={() => setShowPromptPicker(!showPromptPicker)} 
+                disabled={isRewriting} 
+                title="AI ช่วยเกลาข้อความ"
+                className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all border disabled:opacity-50 cursor-pointer shadow-sm
+                  ${showPromptPicker ? 'bg-[#BE7EC7]/20 border-[#BE7EC7]/50 text-[#BE7EC7]' : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/50 hover:text-white'}`}
+              >
+                <Wand2 size={18} />
+              </button>
+
+              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} disabled={isRewriting} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5 disabled:opacity-50"><i className="fa-regular fa-face-smile"></i></button>
+              <button onClick={handleSendClick} disabled={isRewriting} className="flex-1 px-4 py-2.5 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white rounded-xl transition-all font-semibold flex items-center justify-center gap-2 shadow-lg shadow-[#BE7EC7]/20 disabled:opacity-50"><i className="fa-solid fa-paper-plane text-xs"></i> Send</button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 🔥 หน้าต่าง ป๊อปอัปดูรูปภาพขนาดเต็ม (Lightbox Modal) */}
+      {selectedPreview && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10 animate-in fade-in duration-200"
+          onClick={() => setSelectedPreview(null)}
+        >
+          <div className="relative max-w-5xl max-h-full flex flex-col items-center animate-in zoom-in-95 duration-300">
+            {/* ปุ่มกากบาทปิดรูป */}
+            <button
+              className="absolute -top-4 -right-4 md:-top-6 md:-right-12 w-10 h-10 bg-white/10 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-all backdrop-blur-md border border-white/20 shadow-xl z-10"
+              onClick={() => setSelectedPreview(null)}
+            >
+              <X size={20} />
+            </button>
+            
+            {/* รูปภาพขนาดใหญ่ */}
+            <img
+              src={selectedPreview}
+              alt="Full Preview"
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
+              onClick={(e) => e.stopPropagation()} // ป้องกันการกดโดนรูปแล้วปิด
             />
           </div>
-        )}
-        <textarea
-          ref={textareaRef}
-          onKeyDown={handleKeyDown}
-          style={{ height: `${Math.min(height, 150)}px` }}
-          className="w-full p-3.5 bg-white/5 text-white text-sm rounded-xl border border-white/10 focus:border-[#BE7EC7] focus:ring-1 focus:ring-[#BE7EC7] outline-none resize-none custom-scrollbar transition-all"
-          placeholder="Type a message..."
-        />
-        <div className="flex gap-2 mt-3 items-center">
-          <input
-            type="file"
-            multiple
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            onClick={handleAttachClick}
-            className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5"
-          >
-            <i className="fa-solid fa-paperclip"></i>
-          </button>
-          <button
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5"
-          >
-            <i className="fa-regular fa-face-smile"></i>
-          </button>
-          <button
-            onClick={handleSendClick}
-            className="flex-1 px-4 py-2.5 bg-[#BE7EC7] hover:bg-[#a66bb0] text-white rounded-xl transition-all font-semibold flex items-center justify-center gap-2 shadow-lg shadow-[#BE7EC7]/20"
-          >
-            <i className="fa-solid fa-paper-plane text-xs"></i> Send
-          </button>
         </div>
-      </div>
-      <Tooltip
-        id="viewers-tooltip"
-        className="!bg-[#1E1B29] !text-white/90 !border !border-white/10 !rounded-lg !text-xs !px-2 !py-1 shadow-xl z-50"
-      />
+      )}
+
+      <Tooltip id="viewers-tooltip" className="!bg-[#1E1B29] !text-white/90 !border !border-white/10 !rounded-lg !text-xs !px-2 !py-1 shadow-xl z-50" />
     </div>
   );
 }

@@ -2,12 +2,13 @@
 import { useState } from "react";
 import { ArrowLeft, CheckCircle2, Zap, Shield, Globe, Copy, Check, ChevronRight } from "lucide-react";
 
-export default function ConnectLineStep3({ onBack, onComplete }) {
+export default function ConnectLineStep3({ onBack, onComplete, channelId }) {
   const [checked, setChecked] = useState(false);
   const [copied, setCopied] = useState(false);
 
-const currentHost = typeof window !== "undefined" ? window.location.origin : "";
-const webhookUrl = `${currentHost}/api/webhook/line`;
+  const currentHost = typeof window !== "undefined" ? window.location.origin : "";
+  
+  const webhookUrl = `${currentHost}/api/webhook/line${channelId ? `?channel_id=${channelId}` : ''}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(webhookUrl);

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"; 
 import { pusherServer } from "@/lib/pusher";
+import { encryptToken } from "@/lib/encryption";
 
 export async function POST(req) {
     try {
@@ -42,8 +43,8 @@ export async function POST(req) {
             const duplicateCheck = await prisma.channel.findFirst({
                 where: {
                     platform_name: platformName,
+                    // 🚨 เช็คซ้ำจากแค่ Page ID ก็พอครับ แม่นยำกว่า
                     OR: [
-                        { fb_page_access_token: accessToken },
                         { fb_page_id: pageId },
                         { fb_page_id: String(pageId) }
                     ]
@@ -52,7 +53,7 @@ export async function POST(req) {
 
             if (duplicateCheck && String(duplicateCheck.workspace_id) !== String(validWorkspaceId)) {
                 return NextResponse.json({ 
-                    error: "บล็อคการเชื่อมต่อ! เพจหรือ Token นี้ถูกทีมอื่นใช้งานอยู่แล้ว" 
+                    error: "บล็อคการเชื่อมต่อ! เพจนี้ถูกทีมอื่นใช้งานอยู่แล้ว" 
                 }, { status: 400 });
             }
         }
@@ -61,13 +62,16 @@ export async function POST(req) {
             where: { fb_page_id: String(pageId), platform_name: platformName, workspace_id: validWorkspaceId } 
         });
 
+        // 🚨 เข้ารหัส Token ก่อนเซฟ!
+        const securedAccessToken = encryptToken(accessToken);
+
         const channelData = {
             name: pageName || `${platformName} Channel`,
             status: "CONNECTED",
             platform_name: platformName,
             workspace_id: validWorkspaceId,
             fb_page_id: String(pageId), 
-            fb_page_access_token: accessToken
+            fb_page_access_token: securedAccessToken
         };
 
         let channel;

@@ -487,8 +487,43 @@ function ChatPageContent() {
   const statusPriority = { OPEN: 1, PENDING: 2, CLOSED: 3, RESOLVED: 3 };
 
   const filteredChats = chats
-    .filter((chat) => (activeFilter === "All" || chat.status === activeFilter) && (!activeCompanyFilter || chat.company === activeCompanyFilter))
-    .sort((a, b) => (statusPriority[a.status] || 2) - (statusPriority[b.status] || 2));
+    .filter((chat) => {
+      // 1. เช็คก่อนว่าแอดมินเคยตอบแชทนี้หรือยัง
+      const hasAgentReplied = chat.messages?.some(
+        (m) => 
+          m.from === "me" || 
+          m.from === "ADMIN" || 
+          m.from === "AGENT" ||
+          String(m.sender_type).toUpperCase() === "AGENT" || 
+          String(m.sender_type).toUpperCase() === "ADMIN"
+      );
+      
+      // 2. ดึงสถานะแชทมาเช็ค (ถ้าเคยตอบแล้ว ให้ปัดเป็น OPEN อัตโนมัติ)
+      let actualStatus = String(chat.status || "OPEN").toUpperCase();
+      if (hasAgentReplied && actualStatus === "NEW") {
+        actualStatus = "OPEN";
+      }
+
+      // 3. จัดการคำค้นหาของ Filter New
+      let targetFilter = activeFilter;
+      if ( targetFilter === "NEW") {
+      } else {
+          targetFilter = String(targetFilter).toUpperCase();
+      }
+
+      // 4. เทียบเงื่อนไข
+      const statusMatch = activeFilter === "All" || actualStatus === targetFilter;
+      const companyMatch = !activeCompanyFilter || chat.company === activeCompanyFilter;
+      
+      return statusMatch && companyMatch;
+    })
+    .sort((a, b) => {
+       // เอา NEW ขึ้นก่อนเพื่อนเสมอ
+       if (a.status === "NEW" && b.status !== "NEW") return -1;
+       if (b.status === "NEW" && a.status !== "NEW") return 1;
+       // ถ้าไม่ใช่ NEW ค่อยเรียงตาม Priority (OPEN -> PENDING -> CLOSED)
+       return (statusPriority[a.status] || 2) - (statusPriority[b.status] || 2);
+    });
 
   const closeAllPanels = () => {
     setIsAddTagModalOpen(false); setIsContactDetailsOpen(false); setIsAddNoteOpen(false); setIsChangeStatusOpen(false); setIsActivityLogOpen(false); setIsSendToBoardOpen(false);

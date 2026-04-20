@@ -12,8 +12,8 @@ const nextConfig = {
   },
  
   allowedDevOrigins: [
-    'stanniferous-carolynn-pronegotiation.ngrok-free.dev',
-    'localhost:3000'
+    'proposal-clustered-broiling.ngrok-free.dev',
+    'localhost:3001'
   ]
 };
 

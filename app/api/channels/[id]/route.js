@@ -28,7 +28,7 @@ export async function DELETE(req, context) {
         if (!myWorkspace) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
         // =====================================
-        // 🔥 จัดการปุ่มตาม Action
+        // จัดการปุ่มตาม Action
         // =====================================
         if (action === "delete") {
             const chatSessions = await prisma.chatSession.findMany({ where: { channel_id: parseInt(channelId) }, select: { chat_session_id: true }});

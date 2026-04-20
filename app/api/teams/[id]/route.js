@@ -15,7 +15,8 @@ export async function PATCH(request, { params }) {
             where: { team_id: id },
             data: {
                 team_name: name,
-                description: desc
+                description: desc,
+                platforms: platforms || []
             }
         });
 
@@ -47,7 +48,7 @@ export async function PATCH(request, { params }) {
             name: updatedTeam.team_name,
             desc: updatedTeam.description || "",
             members: members || [],
-            platforms: platforms || []
+            platforms: updatedTeam.platforms || []
         });
     } catch (error) {
         console.error("Error updating team:", error);
