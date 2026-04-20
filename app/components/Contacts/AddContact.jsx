@@ -23,7 +23,7 @@ export default function AddContactModal({
         phone: "",
         phonePrefix: "66+", 
         country: "", 
-        tags: "", 
+        tags: [],
         channel: "", 
         status: "Open" 
     });
@@ -194,17 +194,35 @@ export default function AddContactModal({
                             <div className="relative">
                                 <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
                                 <select 
-                                    name="tags"
-                                    value={formData.tags || ""}
-                                    onChange={handleChange}
+                                    // 👈 ป้องกัน Error และดึง ID ได้ตรงจุด ไม่ว่าข้อมูลจะเป็น id หรือ tag_id
+                                    value={Array.isArray(formData.tags) && formData.tags.length > 0 ? String(formData.tags[0].id || formData.tags[0].tag_id || "") : ""}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            const selectedTag = AVAILABLE_TAGS.find(t => String(t.id || t.tag_id) === String(e.target.value));
+                                            if (selectedTag) {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    tags: [selectedTag]
+                                                }));
+                                            }
+                                        } else {
+                                            setFormData(prev => ({ ...prev, tags: [] }));
+                                        }
+                                    }}
                                     className={`${inputClass} pl-11 appearance-none`}
                                 >
                                     <option value="" className="bg-[#1F192E]">No Tag</option>
-                                    {AVAILABLE_TAGS.map((tagObj) => (
-                                        <option key={tagObj.name} value={tagObj.name} className="bg-[#1F192E]">
-                                            {tagObj.emoji} {tagObj.name}
-                                        </option>
-                                    ))}
+                                    {AVAILABLE_TAGS.map((tagObj) => {
+                                        // 👈 อ่านค่าให้ยืดหยุ่นขึ้น
+                                        const tId = tagObj.id || tagObj.tag_id;
+                                        const tName = tagObj.name || tagObj.tag_name;
+                                        
+                                        return (
+                                            <option key={String(tId)} value={String(tId)} className="bg-[#1F192E]">
+                                                {tName}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" size={16} />
                             </div>
