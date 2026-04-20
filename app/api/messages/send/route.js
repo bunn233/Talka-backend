@@ -1,12 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { existsSync } from 'fs';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { pusherServer } from "@/lib/pusher";
 import { decryptToken } from "@/lib/encryption";
+import { v2 as cloudinary } from 'cloudinary'; // 🔥 เพิ่ม Cloudinary
+
+// ☁️ ตั้งค่า Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// ฟังก์ชันแปลงไฟล์แล้วโยนขึ้น Cloudinary
+const uploadToCloudinary = (buffer, filename) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder: "talka_chats", public_id: filename },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    uploadStream.end(buffer);
+  });
+};
 
 export async function POST(req) {
   try {
@@ -74,12 +93,12 @@ export async function POST(req) {
 
     if (!session) return NextResponse.json({ error: "Chat session not found" }, { status: 404 });
 
-    // ถ้าห้องแชทยังเป็น NEW อยู่ ให้ปรับเป็น OPEN อัตโนมัติ เพราะแอดมินตอบกลับแล้ว
+    // ถ้าห้องแชทยังเป็น NEW อยู่ ให้ปรับเป็น OPEN อัตโนมัติ เพราะแอดมินตอบกลับแล้ว + เตะ AI ออก
     await prisma.chatSession.update({
       where: { chat_session_id: parseInt(chatSessionId) },
       data: {
         status: "OPEN",
-        ai_agent_id: null //
+        ai_agent_id: null // 🤖 เตะ AI ออกเพราะคนกำลังพิมพ์ตอบ
       }
     });
 
@@ -130,27 +149,27 @@ export async function POST(req) {
     };
 
     // ----------------------------------------------------------------------
-    //  ระบบอัปโหลดรูปลงเซิร์ฟเวอร์
+    // ☁️ ระบบอัปโหลดรูปขึ้น Cloudinary
     // ----------------------------------------------------------------------
     const uploadedFilesInfo = [];
     if (files.length > 0) {
-      const uploadDir = path.join(process.cwd(), 'public/uploads');
-      if (!existsSync(uploadDir)) {
-        await mkdir(uploadDir, { recursive: true });
-      }
-
       for (const file of files) {
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const uniqueName = `${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
-        const filePath = path.join(uploadDir, uniqueName);
+        const uniqueName = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-        await writeFile(filePath, buffer);
-
-        uploadedFilesInfo.push({
-          file: file,
-          url: `/uploads/${uniqueName}`
-        });
+        try {
+            // โยนขึ้น Cloudinary
+            const uploadResult = await uploadToCloudinary(buffer, uniqueName);
+            
+            uploadedFilesInfo.push({
+                file: file, // เก็บไฟล์ดิบไว้เผื่อ Meta/Telegram ต้องใช้แนบ
+                url: uploadResult.secure_url // ได้ URL จริงบนเน็ตกลับมา
+            });
+        } catch (uploadError) {
+            console.error("Cloudinary Upload Failed:", uploadError);
+            return NextResponse.json({ error: "อัปโหลดรูปภาพไม่สำเร็จ" }, { status: 500 });
+        }
       }
     }
 
@@ -187,7 +206,7 @@ export async function POST(req) {
           const imgResponse = await fetch(metaBaseUrl, { method: "POST", body: metaFormData });
           if (!imgResponse.ok) continue;
 
-          const savedImage = await saveToDB(fileInfo.url, "IMAGE");
+          const savedImage = await saveToDB(fileInfo.url, "IMAGE"); // เซฟลิงก์ Cloudinary ลง DB
           sentMessages.push(savedImage);
         }
       }
@@ -217,12 +236,9 @@ export async function POST(req) {
       }
 
       if (uploadedFilesInfo.length > 0) {
-        const host = req.headers.get("host");
-        const protocol = req.headers.get("x-forwarded-proto") || "https";
-        const baseUrl = `${protocol}://${host}`;
-
         for (const fileInfo of uploadedFilesInfo) {
-          const fullImageUrl = `${baseUrl}${fileInfo.url}`;
+          // 🔥 เปลี่ยนตรงนี้: ใช้ url ของ Cloudinary ได้เลย ไม่ต้องต่อ baseUrl
+          const fullImageUrl = fileInfo.url;
 
           const lineImgResponse = await fetch(linePushUrl, {
             method: "POST",

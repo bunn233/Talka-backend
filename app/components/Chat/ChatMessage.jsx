@@ -2,7 +2,8 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Tooltip } from "react-tooltip";
 import Picker from "emoji-picker-react";
-import { Users, Eye, Bot, ChevronDown, Power, Check, Wand2 } from "lucide-react";
+// 🔥 เพิ่ม ZoomIn สำหรับไอคอนส่องดูรูป
+import { Users, Eye, Bot, ChevronDown, Power, Check, Wand2, X, ZoomIn } from "lucide-react";
 import Pusher from "pusher-js";
 
 const getInitials = (name) => {
@@ -12,7 +13,6 @@ const getInitials = (name) => {
   return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
 };
 
-// 📦 ข้อมูล Prompt พื้นฐาน (เอามาจากหน้า Settings)
 const BUILT_IN_PROMPTS = [
   { id: "1", name: "เปลี่ยนโทนเสียง", action: "ปรับข้อความให้สุภาพ เป็นมืออาชีพ และมีความเห็นอกเห็นใจลูกค้า" },
   { id: "2", name: "แปลเป็นภาษาอังกฤษ", action: "Translate this text to professional English" },
@@ -43,17 +43,18 @@ export default function ChatMessage({
   const [files, setFiles] = useState([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  // 🔥 State สำหรับเก็บรูปภาพที่ถูกคลิกดูขนาดเต็ม
+  const [selectedPreview, setSelectedPreview] = useState(null);
+
   const [showViewers, setShowViewers] = useState(false);
   const viewersDropdownRef = useRef(null);
   const [activeViewers, setActiveViewers] = useState([]);
 
-  // ================= 🤖 AI AGENT STATES =================
   const [agentsList, setAgentsList] = useState([]);
   const [activeAiAgent, setActiveAiAgent] = useState(null);
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const agentDropdownRef = useRef(null);
 
-  // ================= 🪄 AI REWRITE STATES =================
   const [showPromptPicker, setShowPromptPicker] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const promptPickerRef = useRef(null);
@@ -100,7 +101,6 @@ export default function ChatMessage({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 🪄 ฟังก์ชันเรียกใช้งาน AI Rewrite
   const handleAiRewrite = async (action) => {
     const currentText = textareaRef.current?.value;
     if (!currentText?.trim()) return alert("กรุณาพิมพ์ข้อความก่อนใช้ AI ช่วยเกลาคำ");
@@ -117,7 +117,7 @@ export default function ChatMessage({
       
       const data = await res.json();
       if (data.text && textareaRef.current) {
-        textareaRef.current.value = data.text; // นำข้อความใหม่มาทับของเดิม
+        textareaRef.current.value = data.text;
       } else {
         alert("เกิดข้อผิดพลาดในการแปลงข้อความ");
       }
@@ -263,11 +263,15 @@ export default function ChatMessage({
   const handleSendClick = async () => {
     const text = textareaRef.current?.value;
     if (!text?.trim() && files.length === 0) return;
+    
+    const filesToSend = [...files];
+    
+    // Clear Input
     textareaRef.current.value = "";
     setHeight(100);
-    const filesToSend = [...files];
     setFiles([]);
     setShowEmojiPicker(false);
+    
     if (onSendMessage) await onSendMessage(chat.id, text, filesToSend);
   };
 
@@ -291,9 +295,20 @@ export default function ChatMessage({
   }, []);
 
   const handleAttachClick = () => fileInputRef.current.click();
+
   const handleFileChange = (event) => {
-    setFiles((prev) => [...prev, ...Array.from(event.target.files)]);
-    event.target.value = "";
+    const selectedFiles = Array.from(event.target.files).map(file => {
+      Object.assign(file, {
+        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null
+      });
+      return file;
+    });
+    setFiles((prev) => [...prev, ...selectedFiles]);
+    event.target.value = ""; 
+  };
+
+  const handleRemoveFile = (indexToRemove) => {
+    setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const getStatusColorClass = (status) => {
@@ -516,7 +531,7 @@ export default function ChatMessage({
                 </div>
                 <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm break-words ${isMe ? "bg-[#BE7EC7] text-white rounded-br-sm shadow-lg shadow-[#BE7EC7]/10" : "bg-white/5 border border-white/10 text-white/90 rounded-bl-sm"}`}>
                   {isImage ? (
-                    <img src={text} className="max-w-[200px] sm:max-w-xs h-auto object-cover rounded-xl" loading="lazy" />
+                    <img src={text} className="max-w-[200px] sm:max-w-xs h-auto object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setSelectedPreview(text)} loading="lazy" />
                   ) : (
                     <span className="whitespace-pre-wrap">{text}</span>
                   )}
@@ -546,14 +561,55 @@ export default function ChatMessage({
           </div>
         ) : (
           <>
-            <div className="relative">
+            <div className="relative flex flex-col">
+              
+              {/* 🔥 กล่อง Preview รูปภาพและไฟล์ก่อนส่ง (Glassmorphism UI) */}
+              {files.length > 0 && (
+                <div className="flex flex-wrap gap-4 mb-3 p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] max-h-40 overflow-y-auto custom-scrollbar">
+                  {files.map((file, index) => (
+                    <div key={index} className="relative w-20 h-20 rounded-xl overflow-hidden border border-white/10 group shadow-md bg-black/40 shrink-0">
+                      {file.type.startsWith('image/') ? (
+                        <>
+                          <img src={file.preview} alt="preview" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                          {/* เลเยอร์ Hover สำหรับกดดูรูปเต็ม */}
+                          <div 
+                            className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-all duration-300"
+                            onClick={() => setSelectedPreview(file.preview)}
+                          >
+                            <ZoomIn size={24} className="text-white drop-shadow-md transform scale-50 group-hover:scale-100 transition-transform duration-300" />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center">
+                          <i className="fa-solid fa-file text-white/50 mb-1 text-xl"></i>
+                          <span className="text-[9px] text-white/70 w-full line-clamp-2 leading-tight">
+                            {file.name}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* ปุ่มกากบาทลบไฟล์ */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // 👈 ป้องกันไม่ให้ทะลุไปเปิดรูปใหญ่
+                          handleRemoveFile(index);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-75 group-hover:scale-100 shadow-lg z-10"
+                      >
+                        <X size={12} strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {showEmojiPicker && (
                 <div className="absolute bottom-[110%] right-0 z-50 shadow-2xl rounded-2xl overflow-hidden">
                   <Picker onEmojiClick={(emojiData) => { const editor = textareaRef.current; if (!editor) return; const startPos = editor.selectionStart; const endPos = editor.selectionEnd; editor.value = editor.value.substring(0, startPos) + emojiData.emoji + editor.value.substring(endPos); editor.focus(); }} theme="dark" />
                 </div>
               )}
               
-              {/* 🪄 [เพิ่มใหม่] เมนู AI Prompt */}
+              {/* 🪄 เมนู AI Prompt */}
               {showPromptPicker && (
                 <div ref={promptPickerRef} className="absolute bottom-[110%] right-[110px] w-64 bg-[#1E1B29] border border-[#BE7EC7]/30 rounded-2xl shadow-2xl p-2 z-50 animate-in slide-in-from-bottom-2 duration-200">
                   <p className="text-[10px] text-[#BE7EC7] font-bold uppercase tracking-widest px-2 mb-2">AI Copilot</p>
@@ -596,7 +652,6 @@ export default function ChatMessage({
               <input type="file" multiple ref={fileInputRef} onChange={handleFileChange} className="hidden" />
               <button onClick={handleAttachClick} disabled={isRewriting} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 rounded-xl transition-all border border-white/5 disabled:opacity-50"><i className="fa-solid fa-paperclip"></i></button>
               
-              {/* 🪄 [เพิ่มใหม่] ปุ่มไม้กายสิทธิ์ */}
               <button 
                 onClick={() => setShowPromptPicker(!showPromptPicker)} 
                 disabled={isRewriting} 
@@ -613,6 +668,32 @@ export default function ChatMessage({
           </>
         )}
       </div>
+
+      {/* 🔥 หน้าต่าง ป๊อปอัปดูรูปภาพขนาดเต็ม (Lightbox Modal) */}
+      {selectedPreview && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10 animate-in fade-in duration-200"
+          onClick={() => setSelectedPreview(null)}
+        >
+          <div className="relative max-w-5xl max-h-full flex flex-col items-center animate-in zoom-in-95 duration-300">
+            {/* ปุ่มกากบาทปิดรูป */}
+            <button
+              className="absolute -top-4 -right-4 md:-top-6 md:-right-12 w-10 h-10 bg-white/10 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-all backdrop-blur-md border border-white/20 shadow-xl z-10"
+              onClick={() => setSelectedPreview(null)}
+            >
+              <X size={20} />
+            </button>
+            
+            {/* รูปภาพขนาดใหญ่ */}
+            <img
+              src={selectedPreview}
+              alt="Full Preview"
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
+              onClick={(e) => e.stopPropagation()} // ป้องกันการกดโดนรูปแล้วปิด
+            />
+          </div>
+        </div>
+      )}
 
       <Tooltip id="viewers-tooltip" className="!bg-[#1E1B29] !text-white/90 !border !border-white/10 !rounded-lg !text-xs !px-2 !py-1 shadow-xl z-50" />
     </div>

@@ -20,14 +20,15 @@ export async function POST(req) {
 
       // 2. หาบอทให้ตรงตัวเป๊ะๆ ป้องกันแชทตีกัน
       const channel = await prisma.channel.findFirst({
-        where: { 
-            platform_name: "TELEGRAM", 
-            status: "CONNECTED",
-            ...(channelIdQuery ? { channel_id: parseInt(channelIdQuery) } : {}) 
+        where: {
+          platform_name: "TELEGRAM",
+          status: "CONNECTED",
+          ...(channelIdQuery ? { channel_id: parseInt(channelIdQuery) } : {})
         },
       });
 
-      if (!channel) return new NextResponse("OK", { status: 200 });
+      // 🟢 เช็คให้ชัวร์ว่า Channel นี้มีเจ้าของ (Workspace)
+      if (!channel || !channel.workspace_id) return new NextResponse("OK", { status: 200 });
 
       let messageType = "TEXT";
       let content = "";
@@ -45,7 +46,7 @@ export async function POST(req) {
 
       let customerImg = null;
       try {
-        //  2. ถอดรหัส Token ให้อ่านออกก่อน
+        // ถอดรหัส Token ให้อ่านออกก่อน
         const realToken = decryptToken(channel.telegram_bot_token);
 
         const photosRes = await fetch(
@@ -56,7 +57,7 @@ export async function POST(req) {
           const avatarFileId = photosData.result.photos[0][0].file_id;
           customerImg = `/api/telegram/file/${channel.channel_id}/${avatarFileId}`;
         }
-      } catch (e) {}
+      } catch (e) { }
 
       let socialAccount = await prisma.customerSocialAccount.findFirst({
         where: { account_identifier: tgUserId, channel_id: channel.channel_id },
@@ -67,6 +68,7 @@ export async function POST(req) {
       if (!socialAccount) {
         const newCustomer = await prisma.customer.create({
           data: {
+            workspace_id: channel.workspace_id, // 🟢 [แก้ไข 1] เพิ่มการระบุ Workspace
             name: tgName,
             image: customerImg,
             social_accounts: {
@@ -96,27 +98,35 @@ export async function POST(req) {
         where: {
           customer_id: customerId,
           channel_id: channel.channel_id,
-          status: { in: ["NEW", "OPEN", "PENDING"] }, 
+          status: { in: ["NEW", "OPEN", "PENDING"] },
         },
       });
 
       let isNewSession = false;
       if (!session) {
+        // 🟢 [แก้ไข 2] ทำให้ Column ID ไม่ซ้ำกันข้ามบริษัท
+        const defaultColumnId = `col-inbox-${channel.workspace_id}`;
+
         await prisma.boardColumn.upsert({
-          where: { column_id: "col-1" },
+          where: { column_id: defaultColumnId },
           update: {},
-          create: { column_id: "col-1", title: "Inbox", order_index: 0 },
+          create: {
+            column_id: defaultColumnId,
+            workspace_id: channel.workspace_id,
+            title: "Inbox",
+            order_index: 0
+          },
         });
-        
+
         session = await prisma.chatSession.create({
           data: {
             customer_id: customerId,
             channel_id: channel.channel_id,
-            board_column_id: "col-1",
-            status: "NEW" 
+            board_column_id: defaultColumnId,
+            status: "NEW"
           },
         });
-        isNewSession = true; 
+        isNewSession = true;
       }
 
       const isMsgExist = await prisma.message.findUnique({
@@ -128,7 +138,7 @@ export async function POST(req) {
           data: {
             chat_session_id: session.chat_session_id,
             sender_type: "CUSTOMER",
-            message_type: messageType, 
+            message_type: messageType,
             content: content,
             external_id: messageId,
           },
@@ -136,15 +146,15 @@ export async function POST(req) {
 
         if (channel.workspace_id) {
           if (isNewSession) {
-             await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'new-customer-chat', {
-                 id: session.chat_session_id,
-                 name: tgName,
-                 profile: customerImg || "/images/default-avatar.png",
-                 platform: "TELEGRAM",
-                 message: content,
-                 time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                 type: "CHAT"
-             });
+            await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'new-customer-chat', {
+              id: session.chat_session_id,
+              name: tgName,
+              profile: customerImg || "/images/default-avatar.png",
+              platform: "TELEGRAM",
+              message: content,
+              time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              type: "CHAT"
+            });
           }
 
           await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'webhook-event', {
@@ -193,6 +203,20 @@ export async function POST(req) {
 
               const difyData = await difyResponse.json();
               const aiReplyText = difyData.answer;
+
+              const totalTokens = difyData.metadata?.usage?.total_tokens || 0;
+              const totalPrice = parseFloat(difyData.metadata?.usage?.total_price || 0);
+
+              if (totalTokens > 0 && channel.workspace_id) {
+                await prisma.aiTokenLog.create({
+                  data: {
+                    workspace_id: channel.workspace_id,
+                    feature_name: agent.name,
+                    tokens_used: totalTokens,
+                    estimated_cost: totalPrice
+                  }
+                }).catch(e => console.error("Token log error:", e));
+              }
 
               if (aiReplyText) {
                 // 4. ถอดรหัส Token และส่งข้อความกลับหาลูกค้าผ่าน Telegram

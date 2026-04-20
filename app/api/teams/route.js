@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma"; // 🟢 ใช้ตัวแปร prisma จาก lib กลาง
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
-const prisma = new PrismaClient();
-
-// ดึงรายชื่อทีมทั้งหมด (GET)
+// ดึงรายชื่อทีมเฉพาะใน Workspace ของตัวเอง (GET)
 export async function GET() {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        // 1. หาข้อมูล User เพื่อเอา current_workspace_id
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+            select: { current_workspace_id: true }
+        });
+
+        if (!user?.current_workspace_id) return NextResponse.json([]);
+
+        // 2. ดึงเฉพาะทีมที่อยู่ใน Workspace นี้
         const teams = await prisma.team.findMany({
+            where: { workspace_id: user.current_workspace_id },
             include: {
                 members: {
                     include: {
@@ -15,7 +28,7 @@ export async function GET() {
                                 user_id: true,
                                 username: true,
                                 email: true,
-                                role: true
+                                profile_image: true // 🟢 เพิ่มรูปโปรไฟล์เผื่อใช้ใน UI
                             }
                         }
                     }
@@ -30,11 +43,12 @@ export async function GET() {
             desc: team.description || "",
             members: team.members.map(m => m.user.username),
             memberDetails: team.members.map(m => ({
+                id: m.user.user_id,
                 name: m.user.username,
                 email: m.user.email,
-                role: (m.user.role || "EMPLOYEE").toUpperCase()
+                image: m.user.profile_image
             })),
-            platforms: Array.isArray(team.platforms) ? team.platforms : (typeof team.platforms === 'string' ? JSON.parse(team.platforms) : [])
+            platforms: Array.isArray(team.platforms) ? team.platforms : []
         }));
 
         return NextResponse.json(formattedTeams);
@@ -47,41 +61,61 @@ export async function GET() {
 // สร้างทีมใหม่ (POST)
 export async function POST(request) {
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+            select: { current_workspace_id: true }
+        });
+
+        if (!user?.current_workspace_id) return NextResponse.json({ error: "No Workspace Found" }, { status: 400 });
+
         const body = await request.json();
         const { name, desc, members, platforms } = body;
 
-        const newTeam = await prisma.team.create({
-            data: {
-                team_name: name,
-                description: desc,
-                platforms: platforms || []
-            }
-        });
+        // 3. ใช้ Transaction เพื่อให้มั่นใจว่าถ้าสร้างทีมสำเร็จ สมาชิกต้องถูกเพิ่มครบ (ถ้าพังก็พังทั้งหมด)
+        const result = await prisma.$transaction(async (tx) => {
+            // สร้างทีมใหม่พร้อมระบุ workspace_id
+            const newTeam = await tx.team.create({
+                data: {
+                    workspace_id: user.current_workspace_id, // 👈 บรรทัดนี้สำคัญมาก!
+                    team_name: name,
+                    description: desc,
+                    platforms: platforms || []
+                }
+            });
 
-        // เพิ่มสมาชิกในทีม
-        if (members && members.length > 0) {
-            for (const memberName of members) {
-                const user = await prisma.user.findFirst({
-                    where: { username: memberName }
-                });
-                
-                if (user) {
-                    await prisma.teamMember.create({
-                        data: {
-                            team_id: newTeam.team_id,
-                            user_id: user.user_id
-                        }
+            // เพิ่มสมาชิกในทีม (เช็คเฉพาะ User ที่อยู่ใน Workspace เดียวกันเท่านั้น)
+            if (members && members.length > 0) {
+                for (const memberName of members) {
+                    const targetUser = await tx.workspaceMember.findFirst({
+                        where: { 
+                            workspace_id: user.current_workspace_id,
+                            user: { username: memberName }
+                        },
+                        select: { user_id: true }
                     });
+                    
+                    if (targetUser) {
+                        await tx.teamMember.create({
+                            data: {
+                                team_id: newTeam.team_id,
+                                user_id: targetUser.user_id
+                            }
+                        });
+                    }
                 }
             }
-        }
+            return newTeam;
+        });
 
         return NextResponse.json({
-            id: newTeam.team_id,
-            name: newTeam.team_name,
-            desc: newTeam.description || "",
+            id: result.team_id,
+            name: result.team_name,
+            desc: result.description || "",
             members: members || [],
-            platforms: newTeam.platforms || []
+            platforms: result.platforms || []
         }, { status: 201 });
 
     } catch (error) {

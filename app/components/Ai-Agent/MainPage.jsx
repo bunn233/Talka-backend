@@ -1,61 +1,96 @@
 "use client";
 import { Sparkles, Bot, Zap, ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
 
 export default function MainPage({ onStart }) {
   return (
-    // 🎨 Container หลัก: พื้นหลัง #050509 กรอบมน เข้ากับ Sidebar
-    <div className="flex flex-col items-center justify-center w-full h-full min-h-[94vh] bg-[#050509] text-white overflow-hidden font-sans rounded-3xl sm:rounded-[32px] border border-white/5 shadow-2xl relative">
+    // 🎨 Container หลัก: เปลี่ยนเป็น #161223 และขอบมน [3rem] ตามมาตรฐานใหม่
+    <div className="flex flex-col items-center justify-center w-full h-full min-h-[94vh] bg-[#161223] text-white overflow-hidden rounded-[3rem] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative p-8">
       
-      {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/10 blur-[120px] rounded-full pointer-events-none" />
+      {/* 🔮 Background Glow Effects */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#BE7EC7]/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="z-10 text-center max-w-3xl px-6 animate-fadeIn">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#120F1D] border border-white/5 mb-8 shadow-inner">
-          <Sparkles className="text-purple-400" size={16} />
-          <span className="text-xs font-bold tracking-widest uppercase text-white/70">Talka AI Framework</span>
-        </div>
+      <div className="z-10 text-center max-w-4xl px-6">
+        {/* Badge */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-white/5 border border-white/10 mb-10 shadow-lg backdrop-blur-md"
+        >
+          <Sparkles className="text-[#BE7EC7]" size={14} />
+          <span className="text-[10px] font-black tracking-[0.25em] uppercase text-white/50">Next-Gen AI Framework</span>
+        </motion.div>
 
-        <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 bg-gradient-to-br from-white via-white to-white/40 bg-clip-text text-transparent">
+        {/* Main Heading */}
+        <motion.h1 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.1 }}
+          className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9]"
+        >
           Build Your Custom <br />
-          <span className="text-transparent bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text">AI Agents</span>
-        </h1>
+          <span className="text-transparent bg-gradient-to-r from-[#BE7EC7] via-purple-300 to-blue-400 bg-clip-text">
+            AI Agents
+          </span>
+        </motion.h1>
         
-        <p className="text-lg text-white/50 mb-12 max-w-2xl mx-auto leading-relaxed">
+        {/* Sub-text */}
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="text-lg md:text-xl text-white/30 mb-14 max-w-2xl mx-auto leading-relaxed font-light italic"
+        >
           Create, train, and deploy intelligent AI assistants tailored to your business. 
-          Automate support, generate leads, and boost sales in minutes.
-        </p>
+          Automate support and boost sales in minutes.
+        </motion.p>
 
-        <button 
+        {/* Primary Action Button */}
+        <motion.button 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
           onClick={onStart}
-          className="group relative inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl font-black text-lg hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(147,51,234,0.3)] cursor-pointer"
+          className="group relative inline-flex items-center gap-4 px-12 py-5 bg-[#BE7EC7] text-white rounded-full font-black text-sm uppercase tracking-[0.2em] hover:bg-[#a66bb0] hover:scale-105 transition-all duration-500 shadow-[0_10px_40px_rgba(190,126,199,0.3)] cursor-pointer active:scale-95"
         >
           Get Started
-          <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-        </button>
+          <ArrowRight size={18} strokeWidth={3} className="group-hover:translate-x-2 transition-transform" />
+        </motion.button>
 
-        {/* Feature Highlights (ใช้สีการ์ด #120F1D) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 text-left">
-          <div className="bg-[#120F1D] p-6 rounded-2xl border border-white/5 shadow-lg">
-            <Bot className="text-blue-400 mb-4" size={28} />
-            <h3 className="font-bold mb-2">Smart Templates</h3>
-            <p className="text-xs text-white/40 leading-relaxed">Start quickly with pre-built agents for Sales, Support, and more.</p>
-          </div>
-          <div className="bg-[#120F1D] p-6 rounded-2xl border border-white/5 shadow-lg">
-            <Sparkles className="text-purple-400 mb-4" size={28} />
-            <h3 className="font-bold mb-2">Custom Knowledge</h3>
-            <p className="text-xs text-white/40 leading-relaxed">Upload PDFs or add URLs to train your AI on your own data.</p>
-          </div>
-          <div className="bg-[#120F1D] p-6 rounded-2xl border border-white/5 shadow-lg">
-            <Zap className="text-emerald-400 mb-4" size={28} />
-            <h3 className="font-bold mb-2">Actionable Skills</h3>
-            <p className="text-xs text-white/40 leading-relaxed">Equip your AI to collect leads and hand over to humans seamlessly.</p>
-          </div>
+        {/* Feature Cards: เปลี่ยนเป็นสี #1F192E/50 และขอบมน [2rem] */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-24 text-left">
+          {[
+            { icon: Bot, color: "text-blue-400", title: "Smart Templates", desc: "Start quickly with pre-built agents for Sales and Support." },
+            { icon: Sparkles, color: "text-[#BE7EC7]", title: "Custom Knowledge", desc: "Upload PDFs or URLs to train your AI on your own business data." },
+            { icon: Zap, color: "text-emerald-400", title: "Actionable Skills", desc: "Equip your AI to collect leads and hand over to humans seamlessly." }
+          ].map((item, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 + (i * 0.1) }}
+              className="bg-[#1F192E]/40 p-8 rounded-[2rem] border border-white/5 shadow-xl hover:bg-[#1F192E]/60 hover:border-[#BE7EC7]/20 transition-all duration-500 group relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-20 h-20 bg-[#BE7EC7]/5 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+              
+              <div className={`w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mb-6 border border-white/10 ${item.color}`}>
+                <item.icon size={24} />
+              </div>
+              <h3 className="font-bold text-white mb-3 tracking-tight">{item.title}</h3>
+              <p className="text-xs text-white/30 leading-relaxed font-light group-hover:text-white/50 transition-colors">
+                {item.desc}
+              </p>
+            </motion.div>
+          ))}
         </div>
       </div>
       
       <style jsx global>{`
-        .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { 
+          from { opacity: 0; transform: translateY(20px); } 
+          to { opacity: 1; transform: translateY(0); } 
+        }
       `}</style>
     </div>
   );

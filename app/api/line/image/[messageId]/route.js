@@ -3,11 +3,20 @@ import { decryptToken } from "@/lib/encryption";
 
 export async function GET(req, context) {
     try {
-        const { messageId } = await context.params;
+        const resolvedParams = await context.params;
+        const messageId = resolvedParams.messageId;
 
-        // 1. ดึง Access Token จากแชนเนล LINE ล่าสุด
+        // ดึง channelId จาก URL Query (เช่น ?channelId=5)
+        const { searchParams } = new URL(req.url);
+        const channelIdQuery = searchParams.get("channelId");
+
+        // 1. ค้นหา Channel ให้ตรงตัวเป๊ะๆ
         const channel = await prisma.channel.findFirst({
-            where: { platform_name: "LINE" },
+            where: { 
+                platform_name: "LINE",
+                // ถ้ามีแนบมา ให้หาตาม ID ถ้าไม่มีให้ใช้ตัวล่าสุด (เผื่อของเก่า)
+                ...(channelIdQuery ? { channel_id: parseInt(channelIdQuery) } : {})
+            },
             orderBy: { channel_id: 'desc' }
         });
 
@@ -32,7 +41,7 @@ export async function GET(req, context) {
         return new Response(arrayBuffer, {
             headers: {
                 "Content-Type": contentType || "image/jpeg",
-                "Cache-Control": "public, max-age=86400", 
+                "Cache-Control": "public, max-age=86400", // Cache ไว้ 1 วัน
             },
         });
 
