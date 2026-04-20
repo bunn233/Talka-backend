@@ -608,11 +608,12 @@ export default function Sidebar() {
                     isOpen={openDropdown === "Report"}
                     onToggle={() => setOpenDropdown(openDropdown === "Report" ? null : "Report")}
                     links={[
-                      { href: "/Report/contacts", label: "Contacts" },
+                      { href: "/Report", label: "Overview" },
+                      { href: "/Report/contacts", label: "Contacts & Channels" },
                       { href: "/Report/conversation", label: "Conversations" },
-                      { href: "/Report/message", label: "Messages" },
-                      { href: "/Report/responses", label: "Responses" },
+                      { href: "/Report/responses", label: "Responses & SLA" },
                       { href: "/Report/users", label: "Team Performance" },
+                      { href: "/Report/aitoken", label: "AI Usage" },
                     ]}
                     pathname={pathname}
                   />
