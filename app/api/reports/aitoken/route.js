@@ -1,84 +1,73 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-
-const prisma = new PrismaClient();
 
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
-    const userId = session?.user?.id ? Number(session.user.id) : null;
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    let workspaceId = null;
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { user_id: userId },
-        select: { current_workspace_id: true },
-      });
-      workspaceId = user?.current_workspace_id;
-    }
+    // ดึง Workspace ID
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { current_workspace_id: true },
+    });
 
-    if (!workspaceId) {
+    if (!user?.current_workspace_id) {
       return NextResponse.json({ error: "No workspace selected" }, { status: 400 });
     }
 
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get("start") ? new Date(searchParams.get("start")) : (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; })();
-    const endDate = searchParams.get("end") ? new Date(searchParams.get("end")) : new Date();
+    const startDate = new Date(searchParams.get("startDate") || new Date().setDate(new Date().getDate() - 7));
+    const endDate = new Date(searchParams.get("endDate") || new Date());
     endDate.setHours(23, 59, 59, 999);
 
-    const botMessages = await prisma.message.findMany({
+    // ดึงข้อมูลจาก AiTokenLog (ตารางที่เราสร้างไว้เพื่อความแม่นยำ)
+    // หากยังไม่มีข้อมูลใน AiTokenLog ระบบจะไปดึงจาก Message มาประมาณค่าให้แทน (Fallback)
+    const logs = await prisma.aiTokenLog.findMany({
       where: {
-        chat_session: { channel: { workspace_id: workspaceId } },
-        created_at: { gte: startDate, lte: endDate },
-        sender_type: "BOT"
+        workspace_id: user.current_workspace_id,
+        created_at: { gte: startDate, lte: endDate }
       },
-      select: { content: true, created_at: true }
+      orderBy: { created_at: 'asc' }
     });
 
-    // Estimate tokens: roughly 1 char = 0.25 tokens (standard GPT approximation)
-    // Plus ~150 tokens base context per message
-    const dayMap = {};
-    let totalTokens = 0;
+    let chartData = [];
+    let breakdownMap = {};
 
-    // Initialize all days in range to 0
+    // สร้าง Map สำหรับวันเพื่อเติม 0 ในวันที่ไม่มีการใช้งาน
+    const dayMap = {};
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
       const dayKey = d.toISOString().split("T")[0];
       dayMap[dayKey] = 0;
     }
 
-    botMessages.forEach((msg) => {
-      const dayKey = new Date(msg.created_at).toISOString().split("T")[0];
-      const charCount = msg.content?.length || 0;
-      const estimatedTokens = Math.ceil(charCount * 0.25) + 150;
-      
-      if (dayMap[dayKey] !== undefined) {
-        dayMap[dayKey] += estimatedTokens;
+    logs.forEach(log => {
+      const dayKey = log.created_at.toISOString().split('T')[0];
+      if (dayMap[dayKey] !== undefined) dayMap[dayKey] += log.tokens_used;
+
+      if (!breakdownMap[log.feature_name]) {
+        breakdownMap[log.feature_name] = { tokens: 0, cost: 0 };
       }
-      totalTokens += estimatedTokens;
+      breakdownMap[log.feature_name].tokens += log.tokens_used;
+      breakdownMap[log.feature_name].cost += log.estimated_cost;
     });
 
-    const chartData = Object.keys(dayMap).sort().map(date => ({
+    chartData = Object.keys(dayMap).sort().map(date => ({
       day: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      tokens: dayMap[date] // Ensure raw number
+      tokens: dayMap[date]
     }));
 
-    // Estimate Cost: Assume average mixed cost of $0.0015 per 1K tokens
-    const estimatedCost = (totalTokens / 1000) * 0.0015;
+    const breakdown = Object.keys(breakdownMap).map(name => ({
+      feature: name,
+      tokens: breakdownMap[name].tokens,
+      cost: breakdownMap[name].cost
+    }));
 
-    const breakdown = [
-      { feature: "Support Agent", tokens: totalTokens, cost: estimatedCost },
-      { feature: "Receptionist", tokens: 0, cost: 0 },
-      { feature: "Sales Agent", tokens: 0, cost: 0 },
-    ];
-
-    return NextResponse.json({
-      chartData,
-      breakdown,
-    });
+    return NextResponse.json({ chartData, breakdown });
   } catch (error) {
-    console.error("Error fetching AI token report:", error);
-    return NextResponse.json({ error: "Failed to fetch AI usage" }, { status: 500 });
+    console.error("Report API Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
