@@ -28,7 +28,7 @@ export async function GET(request) {
     const myWorkspaces = userProfile.workspaces.map(wm => ({
         id: String(wm.workspace.workspace_id),
         name: wm.workspace.name,
-        role: wm.role 
+        role: (wm.role || "EMPLOYEE").toUpperCase() // Normalize to uppercase
     }));
 
     return NextResponse.json({ 
@@ -38,7 +38,7 @@ export async function GET(request) {
             email: userProfile.email,
             profile_image: userProfile.profile_image,
             online_status: userProfile.online_status,
-            role: userProfile.role
+            role: (userProfile.role || "EMPLOYEE").toUpperCase() // Normalize to uppercase
         },
         workspaces: myWorkspaces 
     }, { status: 200 });

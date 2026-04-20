@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pusherServer } from "@/lib/pusher";
+import { decryptToken } from "@/lib/encryption";
 
 export async function POST(req) {
   try {
@@ -13,8 +14,17 @@ export async function POST(req) {
       const tgName = `${firstName} ${lastName}`.trim() || "Telegram User";
       const messageId = update.message.message_id.toString();
 
+      // 1. ดึงค่า channel_id จาก URL (?channel_id=...)
+      const { searchParams } = new URL(req.url);
+      const channelIdQuery = searchParams.get("channel_id");
+
+      // 2. หาบอทให้ตรงตัวเป๊ะๆ ป้องกันแชทตีกัน
       const channel = await prisma.channel.findFirst({
-        where: { platform_name: "TELEGRAM", status: "CONNECTED" },
+        where: { 
+            platform_name: "TELEGRAM", 
+            status: "CONNECTED",
+            ...(channelIdQuery ? { channel_id: parseInt(channelIdQuery) } : {}) 
+        },
       });
 
       if (!channel) return new NextResponse("OK", { status: 200 });
@@ -35,8 +45,11 @@ export async function POST(req) {
 
       let customerImg = null;
       try {
+        //  2. ถอดรหัส Token ให้อ่านออกก่อน
+        const realToken = decryptToken(channel.telegram_bot_token);
+
         const photosRes = await fetch(
-          `https://api.telegram.org/bot${channel.telegram_bot_token}/getUserProfilePhotos?user_id=${tgUserId}&limit=1`,
+          `https://api.telegram.org/bot${realToken}/getUserProfilePhotos?user_id=${tgUserId}&limit=1`,
         );
         const photosData = await photosRes.json();
         if (photosData.ok && photosData.result.total_count > 0) {
@@ -79,12 +92,10 @@ export async function POST(req) {
         if (!customerImg) customerImg = socialAccount.customer.image;
       }
 
-      // 🚨 🔥 จุดแก้บัคที่แท้จริงอยู่ตรงนี้ครับ!!! 🔥 🚨
       let session = await prisma.chatSession.findFirst({
         where: {
           customer_id: customerId,
           channel_id: channel.channel_id,
-          // ต้องหาทั้ง NEW, OPEN, PENDING ไม่งั้นมันจะสร้างห้องแชทใหม่รัวๆ
           status: { in: ["NEW", "OPEN", "PENDING"] }, 
         },
       });
@@ -102,7 +113,7 @@ export async function POST(req) {
             customer_id: customerId,
             channel_id: channel.channel_id,
             board_column_id: "col-1",
-            status: "NEW" // สร้างห้องเป็น NEW
+            status: "NEW" 
           },
         });
         isNewSession = true; 
@@ -136,7 +147,6 @@ export async function POST(req) {
              });
           }
 
-          // สั่งอัปเดตข้อความ
           await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'webhook-event', {
             action: "SYNC_MESSAGE",
             chatId: session.chat_session_id,
@@ -149,6 +159,85 @@ export async function POST(req) {
             platform: "TELEGRAM",
           });
         }
+
+        // ==========================================
+        // 🤖 โซน AI AUTO-REPLY
+        // ==========================================
+        if (messageType === "TEXT" && session.ai_agent_id) {
+          try {
+            // 1. ดึงข้อมูล Agent
+            const agent = await prisma.aiAgent.findUnique({
+              where: { id: session.ai_agent_id }
+            });
+
+            if (agent) {
+              // 2. ประกอบ Prompt
+              let finalSystemPrompt = `[CORE INSTRUCTIONS]\n${agent.instructions || ''}\n\n[TONE OF VOICE]\nMaintain a ${agent.tone || 'professional'} tone.\n\n[STRICT GUARDRAILS]\n${agent.guardrails || ''}`;
+              if (agent.lead_gen?.enabled) finalSystemPrompt += `\n\n[ACTION: LEAD GENERATION]\n${agent.lead_gen?.prompt || ''}`;
+              if (agent.handover?.enabled) finalSystemPrompt += `\n\n[FALLBACK]\nIf unsure, reply exactly: "${agent.handover?.fallbackMsg || ''}"`;
+
+              // 3. ส่งให้ Dify ประมวลผล
+              const difyResponse = await fetch('https://api.dify.ai/v1/chat-messages', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.DIFY_API_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  inputs: { custom_prompt: finalSystemPrompt },
+                  query: content, // ส่งข้อความลูกค้าไป
+                  response_mode: "blocking",
+                  user: `telegram-${tgUserId}`
+                })
+              });
+
+              const difyData = await difyResponse.json();
+              const aiReplyText = difyData.answer;
+
+              if (aiReplyText) {
+                // 4. ถอดรหัส Token และส่งข้อความกลับหาลูกค้าผ่าน Telegram
+                const botTokenForReply = decryptToken(channel.telegram_bot_token);
+                await fetch(`https://api.telegram.org/bot${botTokenForReply}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: tgUserId,
+                    text: aiReplyText
+                  })
+                });
+
+                // 5. บันทึกคำตอบ AI ลง Database ของเรา
+                const savedAiMessage = await prisma.message.create({
+                  data: {
+                    chat_session_id: session.chat_session_id,
+                    content: aiReplyText,
+                    sender_type: "AGENT",
+                    message_type: "TEXT"
+                  }
+                });
+
+                // 6. ส่ง Pusher แจ้งให้หน้าเว็บอัปเดตแบบเรียลไทม์
+                if (channel.workspace_id) {
+                  await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'webhook-event', {
+                    action: "SYNC_MESSAGE",
+                    chatId: session.chat_session_id,
+                    name: agent.name,
+                    imgUrl: null,
+                    text: aiReplyText,
+                    from: "agent",
+                    type: "TEXT",
+                    timestamp: savedAiMessage.created_at,
+                    platform: "TELEGRAM",
+                  });
+                }
+              }
+            }
+          } catch (aiError) {
+            console.error("AI Auto-Reply Error:", aiError);
+          }
+        }
+        // ==========================================
+
       }
     }
 

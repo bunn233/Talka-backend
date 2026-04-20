@@ -10,7 +10,14 @@ export async function GET() {
             include: {
                 members: {
                     include: {
-                        user: true
+                        user: {
+                            select: {
+                                user_id: true,
+                                username: true,
+                                email: true,
+                                role: true
+                            }
+                        }
                     }
                 }
             },
@@ -22,7 +29,12 @@ export async function GET() {
             name: team.team_name,
             desc: team.description || "",
             members: team.members.map(m => m.user.username),
-            platforms: []
+            memberDetails: team.members.map(m => ({
+                name: m.user.username,
+                email: m.user.email,
+                role: (m.user.role || "EMPLOYEE").toUpperCase()
+            })),
+            platforms: Array.isArray(team.platforms) ? team.platforms : (typeof team.platforms === 'string' ? JSON.parse(team.platforms) : [])
         }));
 
         return NextResponse.json(formattedTeams);
@@ -41,7 +53,8 @@ export async function POST(request) {
         const newTeam = await prisma.team.create({
             data: {
                 team_name: name,
-                description: desc
+                description: desc,
+                platforms: platforms || []
             }
         });
 
@@ -68,7 +81,7 @@ export async function POST(request) {
             name: newTeam.team_name,
             desc: newTeam.description || "",
             members: members || [],
-            platforms: platforms || []
+            platforms: newTeam.platforms || []
         }, { status: 201 });
 
     } catch (error) {

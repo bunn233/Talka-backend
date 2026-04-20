@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pusherServer } from "@/lib/pusher";
+import { decryptToken } from "@/lib/encryption";
 
 export async function POST(req) {
   try {
@@ -104,12 +105,17 @@ export async function POST(req) {
 
         let profileName = `${platformName} User ${senderId.substring(0, 5)}`;
         let profilePic = "";
+        let cleanToken = ""; // เลื่อนตัวแปรนี้ขึ้นมา เพื่อให้ส่งข้อความ AI กลับไปได้
+
         try {
           const fields = isInstagram
             ? "name,profile_pic"
             : "first_name,last_name,profile_pic";
           
-          const cleanToken = channel.fb_page_access_token.trim().replace(/[\n\r]/g, "");
+          //  2. ถอดรหัส Access Token ให้ใช้งานได้
+          const realAccessToken = decryptToken(channel.fb_page_access_token);
+          cleanToken = realAccessToken.trim().replace(/[\n\r]/g, "");
+
           const res = await fetch(
             `https://graph.facebook.com/v21.0/${senderId}?fields=${fields}&access_token=${cleanToken}`
           );
@@ -162,7 +168,7 @@ export async function POST(req) {
           },
         });
 
-        // 🔥 ดักจับว่าเป็นแชทใหม่หรือไม่
+        //  ดักจับว่าเป็นแชทใหม่ป่าว
         let isNewSession = false;
         if (!chat) {
           await prisma.boardColumn.upsert({
@@ -179,7 +185,7 @@ export async function POST(req) {
               board_column_id: "col-1" 
             } 
           });
-          isNewSession = true; // มาร์คไว้
+          isNewSession = true;
         }
 
         const isMsgExist = await prisma.message.findUnique({
@@ -198,7 +204,6 @@ export async function POST(req) {
             });
 
             if (channel.workspace_id) {
-              // 🚨 ถ่ายทอดสดเตือน New Chat ให้กระดิ่ง Sidebar!
               if (isNewSession) {
                  await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'new-customer-chat', {
                      id: chat.chat_session_id,
@@ -226,6 +231,85 @@ export async function POST(req) {
                 timestamp: new Date().toISOString(),
               });
             }
+
+            // ==========================================
+            // 🤖 โซน AI AUTO-REPLY (เชื่อม Dify สำหรับ Facebook/Instagram)
+            // ==========================================
+            if (messageType === "TEXT" && chat.ai_agent_id && cleanToken) {
+              try {
+                // 1. ดึงข้อมูล Agent
+                const agent = await prisma.aiAgent.findUnique({
+                  where: { id: chat.ai_agent_id }
+                });
+
+                if (agent) {
+                  // 2. ประกอบ Prompt
+                  let finalSystemPrompt = `[CORE INSTRUCTIONS]\n${agent.instructions || ''}\n\n[TONE OF VOICE]\nMaintain a ${agent.tone || 'professional'} tone.\n\n[STRICT GUARDRAILS]\n${agent.guardrails || ''}`;
+                  if (agent.lead_gen?.enabled) finalSystemPrompt += `\n\n[ACTION: LEAD GENERATION]\n${agent.lead_gen?.prompt || ''}`;
+                  if (agent.handover?.enabled) finalSystemPrompt += `\n\n[FALLBACK]\nIf unsure, reply exactly: "${agent.handover?.fallbackMsg || ''}"`;
+
+                  // 3. ส่งให้ Dify ประมวลผล
+                  const difyResponse = await fetch('https://api.dify.ai/v1/chat-messages', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${process.env.DIFY_API_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      inputs: { custom_prompt: finalSystemPrompt },
+                      query: content, // ข้อความที่ลูกค้าพิมพ์มา
+                      response_mode: "blocking",
+                      user: `meta-${senderId}` // แยกว่ามาจาก FB/IG
+                    })
+                  });
+
+                  const difyData = await difyResponse.json();
+                  const aiReplyText = difyData.answer;
+
+                  if (aiReplyText) {
+                    // 4. ปาก: ส่งคำตอบกลับหาลูกค้าผ่าน Facebook Graph API
+                    const metaBaseUrl = `https://graph.facebook.com/v21.0/me/messages?access_token=${cleanToken}`;
+                    await fetch(metaBaseUrl, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        recipient: { id: senderId },
+                        message: { text: aiReplyText },
+                      }),
+                    });
+
+                    // 5. บันทึกคำตอบ AI ลง Database
+                    const savedAiMessage = await prisma.message.create({
+                      data: {
+                        chat_session_id: chat.chat_session_id,
+                        content: aiReplyText,
+                        sender_type: "AGENT",
+                        message_type: "TEXT"
+                      }
+                    });
+
+                    // 6. แจ้งหน้าเว็บให้แชทอัปเดตแบบเรียลไทม์
+                    if (channel.workspace_id) {
+                      await pusherServer.trigger(`workspace-${channel.workspace_id}`, 'webhook-event', {
+                        action: "SYNC_MESSAGE",
+                        chatId: chat.chat_session_id,
+                        name: agent.name,
+                        imgUrl: null, // ให้หน้าเว็บโชว์ไอคอนบอทแทน
+                        text: aiReplyText,
+                        from: "agent",
+                        type: "TEXT",
+                        platform: platformName,
+                        timestamp: savedAiMessage.created_at,
+                      });
+                    }
+                  }
+                }
+              } catch (aiError) {
+                console.error("Meta AI Auto-Reply Error:", aiError);
+              }
+            }
+            // ==========================================
+
         }
       }
     }

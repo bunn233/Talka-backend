@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { decryptToken } from "@/lib/encryption";
 
 export async function GET(req, context) {
     try {
@@ -12,23 +13,26 @@ export async function GET(req, context) {
 
         if (!channel) return new Response("Channel not found", { status: 404 });
 
-        // 2. ยิงไปขอไฟล์รูปจาก LINE Data API
+        // 🚨 2. ถอดรหัส Token ก่อนเอาไปใช้งาน
+        const realAccessToken = decryptToken(channel.line_access_token);
+
+        // 3. ยิงไปขอไฟล์รูปจาก LINE Data API
         const lineRes = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
             headers: {
-                Authorization: `Bearer ${channel.line_access_token}`,
+                Authorization: `Bearer ${realAccessToken}`,
             },
         });
 
         if (!lineRes.ok) throw new Error("Failed to fetch image from LINE");
 
-        // 3. ส่งข้อมูลรูปภาพกลับไปให้ Browser โชว์
+        // 4. ส่งข้อมูลรูปภาพกลับไปให้ Browser โชว์
         const contentType = lineRes.headers.get("content-type");
         const arrayBuffer = await lineRes.arrayBuffer();
 
         return new Response(arrayBuffer, {
             headers: {
                 "Content-Type": contentType || "image/jpeg",
-                "Cache-Control": "public, max-age=86400", // เก็บ cache ไว้ 1 วัน
+                "Cache-Control": "public, max-age=86400", 
             },
         });
 

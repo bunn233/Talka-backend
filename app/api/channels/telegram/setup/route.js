@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { pusherServer } from "@/lib/pusher";
+import { encryptToken } from "@/lib/encryption";
 
 export async function POST(req) {
     try {
@@ -40,10 +41,13 @@ export async function POST(req) {
 
         const validWorkspaceId = myWorkspace.workspace_id;
 
+        // 🚨 เข้ารหัส Token 
+        const securedToken = encryptToken(botToken.trim());
+
         const duplicateCheck = await prisma.channel.findFirst({
             where: {
                 platform_name: "TELEGRAM",
-                telegram_bot_token: botToken
+                telegram_bot_token: securedToken 
             }
         });
 
@@ -55,16 +59,9 @@ export async function POST(req) {
 
         const DOMAIN = process.env.NEXT_PUBLIC_BASE_URL; 
         if (!DOMAIN) return NextResponse.json({ error: "ยังไม่ได้ตั้งค่า NEXT_PUBLIC_BASE_URL ใน .env" }, { status: 500 });
-        const webhookUrl = `${DOMAIN}/api/webhook/telegram`;
 
-        const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${webhookUrl}`);
-        const tgResult = await tgResponse.json();
-
-        if (!tgResult.ok) {
-            return NextResponse.json({ error: `เชื่อมต่อ Telegram ไม่สำเร็จ: ${tgResult.description}` }, { status: 400 });
-        }
-
-        const meResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+        // ดึงชื่อบอท (ยิงด้วย Token ธรรมดา)
+        const meResponse = await fetch(`https://api.telegram.org/bot${botToken.trim()}/getMe`);
         const meResult = await meResponse.json();
         
         let actualBotName = "Telegram Bot"; 
@@ -77,11 +74,12 @@ export async function POST(req) {
         }
 
         const existingChannel = await prisma.channel.findFirst({
-            where: { telegram_bot_token: botToken, workspace_id: validWorkspaceId }
+            where: { telegram_bot_token: securedToken, workspace_id: validWorkspaceId }
         });
 
         let savedChannel;
 
+        // 1. บันทึกลงฐานข้อมูลก่อน เพื่อเอา ID
         if (existingChannel) {
              savedChannel = await prisma.channel.update({
                  where: { channel_id: existingChannel.channel_id },
@@ -92,11 +90,21 @@ export async function POST(req) {
                  data: {
                      name: actualBotName,
                      platform_name: "TELEGRAM",
-                     telegram_bot_token: botToken,
+                     telegram_bot_token: securedToken,
                      status: "CONNECTED",
                      workspace_id: validWorkspaceId 
                  }
              });
+        }
+
+        const webhookUrl = `${DOMAIN}/api/webhook/telegram?channel_id=${savedChannel.channel_id}`;
+
+        // 3. ยิงสั่ง Telegram ให้จำ Webhook (ยิงด้วย Token ธรรมดา)
+        const tgResponse = await fetch(`https://api.telegram.org/bot${botToken.trim()}/setWebhook?url=${webhookUrl}`);
+        const tgResult = await tgResponse.json();
+
+        if (!tgResult.ok) {
+            return NextResponse.json({ error: `เชื่อมต่อ Telegram สำเร็จ แต่ตั้งค่า Webhook ไม่ผ่าน: ${tgResult.description}` }, { status: 400 });
         }
 
         try {
@@ -107,7 +115,12 @@ export async function POST(req) {
             console.log("Pusher Trigger Error:", e);
         }
 
-        return NextResponse.json({ success: true, message: `เชื่อมต่อบอท "${actualBotName}" สำเร็จ!`, channel: savedChannel }, { status: 200 });
+        return NextResponse.json({ 
+            success: true, 
+            message: `เชื่อมต่อบอท "${actualBotName}" สำเร็จ!`, 
+            channel_id: savedChannel.channel_id,
+            channel: savedChannel 
+        }, { status: 200 });
 
     } catch (error) {
         console.error("Setup Telegram Error:", error);

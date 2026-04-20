@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { pusherServer } from "@/lib/pusher";
+import { encryptToken } from "@/lib/encryption";
 
 export async function POST(req) {
     try {
@@ -42,7 +43,6 @@ export async function POST(req) {
             where: {
                 platform_name: "LINE",
                 OR: [
-                    { line_access_token: accessToken },
                     { line_channel_id: channelId },
                     { line_channel_id: String(channelId) }
                 ]
@@ -51,7 +51,7 @@ export async function POST(req) {
 
         if (duplicateCheck && String(duplicateCheck.workspace_id) !== String(validWorkspaceId)) {
             return NextResponse.json({ 
-                error: "บล็อคการเชื่อมต่อ! LINE OA หรือ Token นี้ถูกทีมอื่นใช้งานอยู่แล้ว" 
+                error: "บล็อคการเชื่อมต่อ! LINE OA นี้ถูกทีมอื่นใช้งานอยู่แล้ว" 
             }, { status: 400 });
         }
 
@@ -72,10 +72,14 @@ export async function POST(req) {
             where: { platform_name: "LINE", line_channel_id: String(channelId), workspace_id: validWorkspaceId }
         });
 
+        // 🚨 เข้ารหัส Token 2 ตัวนี้ก่อนเซฟ!
+        const securedSecret = encryptToken(channelSecret.trim());
+        const securedAccessToken = encryptToken(accessToken.trim());
+
         const channelData = {
             name: lineBotName,
-            line_channel_secret: channelSecret.trim(),
-            line_access_token: accessToken.trim(),
+            line_channel_secret: securedSecret,
+            line_access_token: securedAccessToken,
             status: "CONNECTED",
             platform_name: "LINE",
             workspace_id: validWorkspaceId,
