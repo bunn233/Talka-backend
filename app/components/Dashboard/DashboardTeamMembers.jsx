@@ -132,7 +132,7 @@ export default function DashboardTeamMembers() {
                               <span className="bg-[#BE7EC7]/20 border border-[#BE7EC7]/30 px-1 py-[1px] rounded text-[#BE7EC7] text-[7px] font-black uppercase tracking-widest leading-none mt-0.5">YOU</span>
                             )}
                           </div>
-                          <p className={`text-[9px] font-bold uppercase tracking-widest ${isAdmin ? "text-amber-400/70" : "text-white/30"}`}>{m.role}</p>
+                          <p className={`text-[9px] font-bold uppercase tracking-widest ${m.role?.toLowerCase() === "admin" ? "text-red-500/80" : m.role?.toLowerCase() === "owner" ? "text-amber-400/70" : "text-white/30"}`}>{m.role}</p>
                         </div>
 
                         <ChevronLeft size={12} className="rotate-180 text-white/10 group-hover:text-[#BE7EC7] group-hover:translate-x-0.5 transition-all shrink-0" />
@@ -195,10 +195,15 @@ export default function DashboardTeamMembers() {
                         )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                        {member.role?.toLowerCase() === "owner" || member.role?.toLowerCase() === "admin" ? (
+                        {member.role?.toLowerCase() === "owner" ? (
                             <div className="flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
                                 <Shield size={10} className="text-amber-500" />
                                 <span className="text-amber-500 text-[9px] font-black uppercase tracking-tighter">{member.role}</span>
+                            </div>
+                        ) : member.role?.toLowerCase() === "admin" ? (
+                            <div className="flex items-center gap-1 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20">
+                                <Shield size={10} className="text-red-500" />
+                                <span className="text-red-500 text-[9px] font-black uppercase tracking-tighter">{member.role}</span>
                             </div>
                         ) : (
                             <div className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded-md">

@@ -48,15 +48,37 @@ export async function GET(req) {
             include: {
                 _count: {
                     select: { members: true, channels: true }
+                },
+                members: {
+                    where: { role: 'Owner' },
+                    include: { user: { select: { company_size: true } } }
                 }
             }
         });
+
+        let maxUsers = 10;
+        const owner = workspace?.members?.[0]?.user;
+        if (owner && owner.company_size) {
+            const sizeStr = owner.company_size;
+            if (sizeStr.includes('+')) {
+                const num = parseInt(sizeStr.replace('+', ''));
+                maxUsers = isNaN(num) ? 999 : num * 5; 
+            } else if (sizeStr.includes('-')) {
+                const parts = sizeStr.split('-');
+                const max = parseInt(parts[1]);
+                if (!isNaN(max)) maxUsers = max;
+            } else {
+                const num = parseInt(sizeStr);
+                if (!isNaN(num)) maxUsers = num;
+            }
+        }
 
         return NextResponse.json({ 
             success: true, 
             workspace, 
             userRole: memberCheck.role,
-            monthlyChats: monthlyChatsCount 
+            monthlyChats: monthlyChatsCount,
+            maxUsers: maxUsers
         });
 
     } catch (error) {
@@ -72,7 +94,7 @@ export async function PUT(req) {
         if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
         const body = await req.json();
-        const { wsId, name, logo } = body;
+        const { wsId, name } = body;
 
         if (!wsId || !name) return NextResponse.json({ error: "ข้อมูลไม่ครบถ้วน" }, { status: 400 });
 
@@ -85,7 +107,7 @@ export async function PUT(req) {
             where: { 
                 workspace_id: parseInt(wsId), 
                 user_id: user.user_id,
-                role: { in: ["Owner", "ADMIN"] } // รองรับสิทธิ์ Owner หรือ ADMIN ในการแก้ชื่อ/รูป
+                role: "Owner" // Only Owner can edit
             }
         });
 
@@ -93,12 +115,9 @@ export async function PUT(req) {
             return NextResponse.json({ error: "คุณไม่มีสิทธิ์แก้ไข Workspace นี้" }, { status: 403 });
         }
 
-        const dataToUpdate = { name: name };
-        if (logo !== undefined) dataToUpdate.logo = logo;
-
         const updatedWs = await prisma.workspace.update({
             where: { workspace_id: parseInt(wsId) },
-            data: dataToUpdate
+            data: { name: name }
         });
 
       

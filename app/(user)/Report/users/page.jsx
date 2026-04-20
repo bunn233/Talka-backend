@@ -54,7 +54,7 @@ export default function TeamPerformanceReport() {
       headerActions={<ReportDatePicker range={range} setRange={setRange} />}
       kpiCards={
         <>
-          <StatsCard label="Total Assigned" value={stats.totalAssigned || 0} icon={MessageSquare} color="#60a5fa" subtitle="conversations" />
+          <StatsCard label="Total Handled" value={stats.totalAssigned || 0} icon={MessageSquare} color="#60a5fa" subtitle="conversations" />
           <StatsCard label="Total Closed" value={stats.totalClosed || 0} icon={Trophy} color="#4ade80" subtitle="resolved" />
           <StatsCard label="Messages Sent" value={(stats.totalMessages || 0).toLocaleString()} icon={MessageSquare} color="#BE7EC7" subtitle="by all agents" />
         </>
@@ -62,19 +62,23 @@ export default function TeamPerformanceReport() {
     >
 
       {/* Team Performance Bar Chart */}
-      <ReportCard title="Agent Comparison" tooltip="เปรียบเทียบจำนวน Assigned vs Closed ของแต่ละสมาชิก">
-        <ChartContainer height={280}>
+      <ReportCard title="Agent Comparison" tooltip="เปรียบเทียบจำนวนการจัดการแชท (Handled) vs ปิดแชท (Closed) ของแต่ละสมาชิก">
+        <ChartContainer height={300}>
           {chartTeamData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartTeamData} barGap={4}>
-                <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.5)" }} />
-                <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="assigned" name="Assigned" fill={CHART_COLORS.blue} radius={[6, 6, 0, 0]} barSize={28} />
-                <Bar dataKey="closed" name="Closed" fill={CHART_COLORS.green} radius={[6, 6, 0, 0]} barSize={28} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="w-full h-full overflow-x-auto overflow-y-hidden pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <div style={{ minWidth: chartTeamData.length > 5 ? `${chartTeamData.length * 100}px` : "100%", height: "100%" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartTeamData} barGap={4}>
+                    <CartesianGrid stroke={CHART_THEME.gridStroke} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.5)" }} tickMargin={10} />
+                    <YAxis stroke={CHART_THEME.axisStroke} style={{ fontSize: CHART_THEME.fontSize }} tick={{ fill: "rgba(255,255,255,0.3)" }} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                    <Bar dataKey="assigned" name="Handled" fill={CHART_COLORS.blue} radius={[4, 4, 0, 0]} barSize={24} />
+                    <Bar dataKey="closed" name="Closed" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           ) : <EmptyState title="No team data" subtitle="No workspace members found" />}
         </ChartContainer>
       </ReportCard>
@@ -85,7 +89,7 @@ export default function TeamPerformanceReport() {
         tooltip="สรุปผลงานรายบุคคลของทีม"
         actions={<ExportCSVButton data={teamData.map(m => ({ name: m.name, role: m.role, assigned: m.assigned, closed: m.closed, messages: m.messages, resolution: m.resolutionRate + "%" }))} filename="team_performance" />}
       >
-        <ReportTable headers={["Agent", "Role", "Assigned", "Closed", "Messages", "Resolution"]}>
+        <ReportTable headers={["Agent", "Role", "Handled", "Closed", "Messages", "Resolution"]}>
           {teamData.map((member, i) => {
             const isTop = i === 0 && member.closed > 0;
             return (
